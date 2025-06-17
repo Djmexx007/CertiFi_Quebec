@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, Eye, EyeOff, AlertCircle, Info, CheckCircle } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Card } from './ui/Card';
@@ -111,182 +111,143 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const isAutoCreateSuccess = error && error.includes('créé automatiquement');
 
   return (
-    <div className="space-y-6">
-      <Card className="w-full max-w-md mx-auto">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <User className="w-8 h-8 text-white" />
+    <Card className="w-full max-w-md mx-auto">
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <User className="w-8 h-8 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Connexion</h2>
+        <p className="text-gray-600 mt-2">Accédez à votre formation CertiFi</p>
+      </div>
+
+      {/* Affichage des erreurs globales */}
+      {error && (
+        <div className={`mb-4 p-3 border rounded-lg ${
+          isAutoCreateSuccess ? 'bg-green-50 border-green-200' :
+          isDemoAccountError ? 'bg-orange-50 border-orange-200' : 
+          'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-start space-x-2">
+            {isAutoCreateSuccess ? (
+              <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+            ) : (
+              <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
+                isDemoAccountError ? 'text-orange-600' : 'text-red-600'
+              }`} />
+            )}
+            <div className="flex-1">
+              <p className={`text-sm ${
+                isAutoCreateSuccess ? 'text-green-800' :
+                isDemoAccountError ? 'text-orange-800' : 
+                'text-red-800'
+              }`}>
+                {error}
+              </p>
+              {isAutoCreateSuccess && (
+                <p className="text-xs text-green-700 mt-1">
+                  Vous pouvez maintenant vous connecter avec ce compte.
+                </p>
+              )}
+              {onClearError && (
+                <button
+                  onClick={onClearError}
+                  className={`text-xs underline mt-1 ${
+                    isAutoCreateSuccess ? 'text-green-600 hover:text-green-800' :
+                    isDemoAccountError ? 'text-orange-600 hover:text-orange-800' : 
+                    'text-red-600 hover:text-red-800'
+                  }`}
+                >
+                  Fermer
+                </button>
+              )}
+            </div>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">Connexion</h2>
-          <p className="text-gray-600 mt-2">Accédez à votre formation CertiFi</p>
+        </div>
+      )}
+
+      {/* Avertissement si désactivé */}
+      {disabled && !loading && (
+        <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-5 h-5 text-orange-600" />
+            <p className="text-sm text-orange-800">
+              Connexion temporairement indisponible. Vérifiez votre connexion réseau.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Numéro de représentant"
+          type="text"
+          icon={User}
+          value={credentials.primerica_id}
+          onChange={(e) => handleInputChange('primerica_id', e.target.value)}
+          error={errors.primerica_id}
+          placeholder="SUPREMEADMIN001"
+          disabled={isFormDisabled}
+          autoComplete="username"
+        />
+
+        <div className="relative">
+          <Input
+            label="Mot de passe"
+            type={showPassword ? 'text' : 'password'}
+            icon={Lock}
+            value={credentials.password}
+            onChange={(e) => handleInputChange('password', e.target.value)}
+            error={errors.password}
+            placeholder="••••••••"
+            disabled={isFormDisabled}
+            autoComplete="current-password"
+          />
+          <button
+            type="button"
+            className="absolute right-3 top-8 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+            onClick={() => setShowPassword(!showPassword)}
+            disabled={isFormDisabled}
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+          </button>
         </div>
 
-        {/* Affichage des erreurs globales */}
-        {error && (
-          <div className={`mb-4 p-3 border rounded-lg ${
-            isAutoCreateSuccess ? 'bg-green-50 border-green-200' :
-            isDemoAccountError ? 'bg-orange-50 border-orange-200' : 
-            'bg-red-50 border-red-200'
-          }`}>
-            <div className="flex items-start space-x-2">
-              {isAutoCreateSuccess ? (
-                <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-              ) : (
-                <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
-                  isDemoAccountError ? 'text-orange-600' : 'text-red-600'
-                }`} />
-              )}
-              <div className="flex-1">
-                <p className={`text-sm ${
-                  isAutoCreateSuccess ? 'text-green-800' :
-                  isDemoAccountError ? 'text-orange-800' : 
-                  'text-red-800'
-                }`}>
-                  {error}
-                </p>
-                {isAutoCreateSuccess && (
-                  <p className="text-xs text-green-700 mt-1">
-                    Vous pouvez maintenant vous connecter avec ce compte.
-                  </p>
-                )}
-                {onClearError && (
-                  <button
-                    onClick={onClearError}
-                    className={`text-xs underline mt-1 ${
-                      isAutoCreateSuccess ? 'text-green-600 hover:text-green-800' :
-                      isDemoAccountError ? 'text-orange-600 hover:text-orange-800' : 
-                      'text-red-600 hover:text-red-800'
-                    }`}
-                  >
-                    Fermer
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Avertissement si désactivé */}
-        {disabled && !loading && (
-          <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-            <div className="flex items-center space-x-2">
-              <AlertCircle className="w-5 h-5 text-orange-600" />
-              <p className="text-sm text-orange-800">
-                Connexion temporairement indisponible. Vérifiez votre connexion réseau.
-              </p>
-            </div>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Numéro de représentant"
-            type="text"
-            icon={User}
-            value={credentials.primerica_id}
-            onChange={(e) => handleInputChange('primerica_id', e.target.value)}
-            error={errors.primerica_id}
-            placeholder="SUPREMEADMIN001"
+        <div className="flex items-center">
+          <input
+            type="checkbox"
+            id="rememberMe"
+            checked={credentials.rememberMe}
+            onChange={(e) => handleInputChange('rememberMe', e.target.checked)}
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
             disabled={isFormDisabled}
-            autoComplete="username"
           />
+          <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
+            Se souvenir de moi
+          </label>
+        </div>
 
-          <div className="relative">
-            <Input
-              label="Mot de passe"
-              type={showPassword ? 'text' : 'password'}
-              icon={Lock}
-              value={credentials.password}
-              onChange={(e) => handleInputChange('password', e.target.value)}
-              error={errors.password}
-              placeholder="••••••••"
-              disabled={isFormDisabled}
-              autoComplete="current-password"
-            />
-            <button
-              type="button"
-              className="absolute right-3 top-8 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-              onClick={() => setShowPassword(!showPassword)}
-              disabled={isFormDisabled}
-              tabIndex={-1}
-            >
-              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-            </button>
-          </div>
+        <Button
+          type="submit"
+          className="w-full"
+          loading={isSubmitting || loading}
+          disabled={isFormDisabled}
+        >
+          {isSubmitting || loading ? 'Connexion en cours...' : 'Se connecter'}
+        </Button>
+      </form>
 
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="rememberMe"
-              checked={credentials.rememberMe}
-              onChange={(e) => handleInputChange('rememberMe', e.target.checked)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
-              disabled={isFormDisabled}
-            />
-            <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
-              Se souvenir de moi
-            </label>
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full"
-            loading={isSubmitting || loading}
+      <div className="mt-6 text-center">
+        <p className="text-sm text-gray-600">
+          Problème de connexion ?{' '}
+          <button 
+            className="text-blue-600 hover:text-blue-500 font-medium disabled:opacity-50"
             disabled={isFormDisabled}
           >
-            {isSubmitting || loading ? 'Connexion en cours...' : 'Se connecter'}
-          </Button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-600">
-            Problème de connexion ?{' '}
-            <button 
-              className="text-blue-600 hover:text-blue-500 font-medium disabled:opacity-50"
-              disabled={isFormDisabled}
-            >
-              Contactez l'administrateur
-            </button>
-          </p>
-        </div>
-      </Card>
-
-      {/* Informations sur les comptes de démonstration */}
-      <Card className="w-full max-w-md mx-auto bg-blue-50 border-blue-200">
-        <div className="flex items-start space-x-3">
-          <Info className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <h4 className="font-semibold text-blue-900 mb-2">Comptes de Démonstration</h4>
-            <div className="space-y-2 text-sm text-blue-800">
-              <div className="grid grid-cols-1 gap-2">
-                <div className="bg-white/50 p-2 rounded">
-                  <p className="font-medium">SUPREMEADMIN001</p>
-                  <p className="text-xs">Admin Suprême - password123</p>
-                </div>
-                <div className="bg-white/50 p-2 rounded">
-                  <p className="font-medium">REGULARADMIN001</p>
-                  <p className="text-xs">Admin Régulier - password123</p>
-                </div>
-                <div className="bg-white/50 p-2 rounded">
-                  <p className="font-medium">PQAPUSER001</p>
-                  <p className="text-xs">Conseiller PQAP - password123</p>
-                </div>
-                <div className="bg-white/50 p-2 rounded">
-                  <p className="font-medium">FONDSUSER001</p>
-                  <p className="text-xs">Expert Fonds Mutuels - password123</p>
-                </div>
-                <div className="bg-white/50 p-2 rounded">
-                  <p className="font-medium">BOTHUSER001</p>
-                  <p className="text-xs">Conseiller Expert - password123</p>
-                </div>
-              </div>
-              <p className="text-xs text-blue-700 mt-3 italic">
-                ✨ Les comptes de démonstration sont créés automatiquement lors de la première connexion si ils n'existent pas.
-              </p>
-            </div>
-          </div>
-        </div>
-      </Card>
-    </div>
+            Contactez l'administrateur
+          </button>
+        </p>
+      </div>
+    </Card>
   );
 };
