@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase, SupabaseAPI, type User } from '../lib/supabase'
+import { loginWithPrimericaId } from '../services/authService'
 import type { Session } from '@supabase/supabase-js'
 
 interface AuthState {
@@ -414,21 +415,19 @@ export const useSupabaseAuth = () => {
         throw new Error('Timeout lors de la connexion')
       }, AUTH_TIMEOUT)
 
-      const result = await SupabaseAPI.login(credentials.primerica_id, credentials.password)
+      // Utiliser le service d'authentification sécurisé
+      const session = await loginWithPrimericaId(credentials.primerica_id, credentials.password)
       
       clearTimeouts()
       
-      if (result.error) {
-        throw new Error(result.error)
+      if (!session) {
+        throw new Error('Erreur lors de la création de la session')
       }
 
-      // En mode démo ou si on a une session simulée, charger le profil directement
-      if (isDemoMode() || result.session?.access_token?.includes('demo')) {
-        await loadUserProfile(result.session)
-      }
-      // Sinon, la session sera automatiquement gérée par onAuthStateChange
+      // Charger le profil utilisateur
+      await loadUserProfile(session)
 
-      return result
+      return { session }
     } catch (err) {
       clearTimeouts()
       const errorMessage = err instanceof Error ? err.message : 'Erreur de connexion'
