@@ -7,6 +7,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Variables d\'environnement Supabase manquantes')
 }
 
+// Log de configuration pour débogage
+console.log('Supabase Configuration:', {
+  url: supabaseUrl,
+  anonKey: supabaseAnonKey ? 'Present' : 'Missing',
+  anonKeyLength: supabaseAnonKey?.length
+});
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -170,6 +177,13 @@ export interface AdminLog {
 // API Helpers avec gestion d'erreur améliorée
 export class SupabaseAPI {
   private static async makeRequest(url: string, options: RequestInit = {}) {
+    console.log('🌐 Making request to:', url);
+    console.log('🔧 Request options:', {
+      method: options.method || 'GET',
+      headers: options.headers,
+      hasBody: !!options.body
+    });
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 secondes timeout
 
@@ -179,18 +193,25 @@ export class SupabaseAPI {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey, // Toujours inclure la clé API
           ...options.headers
         }
       })
 
       clearTimeout(timeoutId)
 
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
         const errorText = await response.text()
+        console.error('❌ Response error:', errorText);
         throw new Error(`HTTP ${response.status}: ${errorText}`)
       }
 
-      return response.json()
+      const result = await response.json()
+      console.log('✅ Response data:', result);
+      return result
     } catch (error) {
       clearTimeout(timeoutId)
       
@@ -207,15 +228,25 @@ export class SupabaseAPI {
 
   private static async getAuthHeaders() {
     const { data: { session } } = await supabase.auth.getSession()
-    return session ? {
-      'Authorization': `Bearer ${session.access_token}`,
-      'Content-Type': 'application/json'
-    } : {
-      'Content-Type': 'application/json'
+    const headers = {
+      'Content-Type': 'application/json',
+      'apikey': supabaseAnonKey // Toujours inclure la clé API
     }
+    
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+    
+    console.log('🔑 Auth headers prepared:', {
+      hasApiKey: !!headers['apikey'],
+      hasAuth: !!headers['Authorization'],
+      authLength: headers['Authorization']?.length
+    });
+    
+    return headers
   }
 
-  // Auth API
+  // Auth API - Utilise directement Supabase Auth au lieu des Edge Functions
   static async register(data: {
     email: string
     password: string
@@ -224,31 +255,146 @@ export class SupabaseAPI {
     last_name: string
     initial_role: 'PQAP' | 'FONDS_MUTUELS' | 'LES_DEUX'
   }) {
-    return this.makeRequest(`${supabaseUrl}/functions/v1/auth-api/register`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    })
+    console.log('📝 Registering user with Supabase Auth...');
+    
+    try {
+      // Utiliser directement Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          data: {
+            primerica_id: data.primerica_id,
+            first_name: data.first_name,
+            last_name: data.last_name,
+            initial_role: data.initial_role
+          }
+        }
+      })
+
+      if (authError) {
+        console.error('❌ Auth registration error:', authError);
+        throw authError
+      }
+
+      console.log('✅ Registration successful:', authData);
+      return { user: authData.user, session: authData.session }
+    } catch (error) {
+      console.error('❌ Registration failed:', error);
+      throw error
+    }
   }
 
   static async login(primerica_id: string, password: string) {
-    return this.makeRequest(`${supabaseUrl}/functions/v1/auth-api/login`, {
-      method: 'POST',
-      body: JSON.stringify({ primerica_id, password })
-    })
+    console.log('🔐 Attempting login for:', primerica_id);
+    
+    try {
+      // D'abord, trouver l'email associé au primerica_id
+      console.log('🔍 Looking up user by primerica_id...');
+      
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email, is_active')
+        .eq('primerica_id', primerica_id)
+        .single()
+
+      if (userError || !userData) {
+        console.error('❌ User lookup failed:', userError);
+        throw new Error('Numéro de représentant introuvable')
+      }
+
+      if (!userData.is_active) {
+        throw new Error('Compte désactivé. Contactez l\'administrateur.')
+      }
+
+      console.log('✅ User found, attempting auth login...');
+      
+      // Utiliser l'email pour la connexion Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: userData.email,
+        password: password
+      })
+
+      if (authError) {
+        console.error('❌ Auth login error:', authError);
+        if (authError.message.includes('Invalid login credentials')) {
+          throw new Error('Mot de passe incorrect')
+        }
+        throw authError
+      }
+
+      console.log('✅ Login successful:', authData);
+      return { 
+        message: 'Connexion réussie',
+        session: authData.session,
+        user: authData.user
+      }
+    } catch (error) {
+      console.error('❌ Login failed:', error);
+      throw error
+    }
   }
 
   static async resetPassword(email: string) {
-    return this.makeRequest(`${supabaseUrl}/functions/v1/auth-api/reset-password`, {
-      method: 'POST',
-      body: JSON.stringify({ email })
-    })
+    console.log('🔄 Resetting password for:', email);
+    
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`
+      })
+
+      if (error) {
+        console.error('❌ Password reset error:', error);
+        throw error
+      }
+
+      console.log('✅ Password reset email sent');
+      return { message: 'Email de réinitialisation envoyé' }
+    } catch (error) {
+      console.error('❌ Password reset failed:', error);
+      throw error
+    }
   }
 
   // User API
   static async getUserProfile() {
-    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/profile`, {
-      headers: await this.getAuthHeaders()
-    })
+    console.log('👤 Fetching user profile...');
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Utilisateur non authentifié')
+
+      const { data: profile, error } = await supabase
+        .from('users')
+        .select(`
+          *,
+          user_permissions (
+            permission_id,
+            permissions (name, description)
+          )
+        `)
+        .eq('id', user.id)
+        .single()
+
+      if (error) {
+        console.error('❌ Profile fetch error:', error);
+        throw error
+      }
+
+      // Obtenir les statistiques utilisateur
+      const { data: statsData } = await supabase.rpc('get_user_stats', { user_uuid: user.id })
+
+      console.log('✅ Profile fetched successfully');
+      return { 
+        profile: {
+          ...profile,
+          stats: statsData || {}
+        }
+      }
+    } catch (error) {
+      console.error('❌ Profile fetch failed:', error);
+      throw error
+    }
   }
 
   static async getPodcasts() {
