@@ -1,3 +1,4 @@
+import React from 'react'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // Interface pour la configuration de connexion
@@ -51,21 +52,22 @@ const validateEnvironmentVariables = (): { url: string; anonKey: string } => {
   return { url, anonKey }
 }
 
-// Test de connectivité
+// Test de connectivité avec gestion d'erreur améliorée
 export const testSupabaseConnection = async (client: SupabaseClient): Promise<boolean> => {
   try {
     console.log('🔍 Test de connectivité Supabase...')
     
-    // Test simple avec timeout
+    // Test simple avec timeout plus court pour éviter les blocages
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 secondes
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 secondes
 
     try {
-      // Test de base avec une requête simple
+      // Test de base avec une requête simple vers la table users
       const { error } = await client
         .from('users')
         .select('count', { count: 'exact', head: true })
         .limit(1)
+        .abortSignal(controller.signal)
 
       clearTimeout(timeoutId)
 
@@ -84,7 +86,14 @@ export const testSupabaseConnection = async (client: SupabaseClient): Promise<bo
         return false
       }
       
-      throw fetchError
+      // Log plus détaillé pour les erreurs de réseau
+      console.error('❌ Erreur réseau lors du test de connectivité:', {
+        name: fetchError instanceof Error ? fetchError.name : 'Unknown',
+        message: fetchError instanceof Error ? fetchError.message : 'Unknown error',
+        stack: fetchError instanceof Error ? fetchError.stack : undefined
+      })
+      
+      return false
     }
   } catch (error) {
     console.error('❌ Échec du test de connectivité Supabase:', error)
@@ -92,7 +101,7 @@ export const testSupabaseConnection = async (client: SupabaseClient): Promise<bo
   }
 }
 
-// Création du client Supabase sécurisé
+// Création du client Supabase sécurisé avec configuration réseau améliorée
 export const createSecureSupabaseClient = (): SupabaseClient => {
   try {
     console.log('🔧 Initialisation de la connexion Supabase...')
@@ -100,7 +109,7 @@ export const createSecureSupabaseClient = (): SupabaseClient => {
     // Validation des variables d'environnement
     const { url, anonKey } = validateEnvironmentVariables()
     
-    // Configuration sécurisée
+    // Configuration sécurisée avec options réseau améliorées
     const config: SupabaseConfig = {
       url,
       anonKey,
@@ -114,7 +123,9 @@ export const createSecureSupabaseClient = (): SupabaseClient => {
         global: {
           headers: {
             'X-Client-Info': 'certifi-quebec-web',
-            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0'
+            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
           }
         },
         db: {
