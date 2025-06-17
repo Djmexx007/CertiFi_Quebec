@@ -22,7 +22,6 @@ interface LoginRequest {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -73,7 +72,7 @@ serve(async (req) => {
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
           email: body.email,
           password: body.password,
-          email_confirm: true, // Auto-confirmer l'email
+          email_confirm: true,
           user_metadata: {
             primerica_id: body.primerica_id,
             first_name: body.first_name,
@@ -103,7 +102,6 @@ serve(async (req) => {
         )
 
         if (profileError) {
-          // Si erreur lors de la création du profil, supprimer l'utilisateur auth
           await supabase.auth.admin.deleteUser(authData.user.id)
           return new Response(
             JSON.stringify({ error: 'Erreur lors de la création du profil: ' + profileError.message }),

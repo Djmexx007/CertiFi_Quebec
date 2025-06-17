@@ -3,7 +3,12 @@ import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Card } from './ui/Card';
-import { LoginCredentials } from '../types/auth';
+
+interface LoginCredentials {
+  primerica_id: string;
+  password: string;
+  rememberMe?: boolean;
+}
 
 interface LoginFormProps {
   onLogin: (credentials: LoginCredentials) => Promise<void>;
@@ -12,7 +17,7 @@ interface LoginFormProps {
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, loading = false }) => {
   const [credentials, setCredentials] = useState<LoginCredentials>({
-    representantNumber: '',
+    primerica_id: '',
     password: '',
     rememberMe: false
   });
@@ -22,10 +27,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, loading = false }
   const validateForm = (): boolean => {
     const newErrors: Partial<LoginCredentials> = {};
     
-    if (!credentials.representantNumber.trim()) {
-      newErrors.representantNumber = 'Le numéro de représentant est requis';
-    } else if (!/^\d{6,}$/.test(credentials.representantNumber)) {
-      newErrors.representantNumber = 'Format invalide (minimum 6 chiffres)';
+    if (!credentials.primerica_id.trim()) {
+      newErrors.primerica_id = 'Le numéro de représentant est requis';
     }
     
     if (!credentials.password) {
@@ -72,10 +75,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, loading = false }
           label="Numéro de représentant"
           type="text"
           icon={User}
-          value={credentials.representantNumber}
-          onChange={(e) => handleInputChange('representantNumber', e.target.value)}
-          error={errors.representantNumber}
-          placeholder="123456"
+          value={credentials.primerica_id}
+          onChange={(e) => handleInputChange('primerica_id', e.target.value)}
+          error={errors.primerica_id}
+          placeholder="PQAPUSER001"
           disabled={loading}
         />
 

@@ -1,11 +1,12 @@
 import React from 'react';
-import { useAuth } from './hooks/useAuth';
+import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import { Header } from './components/Header';
 import { LoginForm } from './components/LoginForm';
 import { Dashboard } from './components/Dashboard';
+import { AdminDashboard } from './components/admin/AdminDashboard';
 
 function App() {
-  const { user, isAuthenticated, isLoading, login, logout } = useAuth();
+  const { user, isAuthenticated, isLoading, isAdmin, login, logout } = useSupabaseAuth();
 
   if (isLoading) {
     return (
@@ -24,7 +25,13 @@ function App() {
       
       <main>
         {isAuthenticated && user ? (
-          <Dashboard user={user} />
+          <>
+            {isAdmin ? (
+              <AdminDashboard user={user} />
+            ) : (
+              <Dashboard user={user} />
+            )}
+          </>
         ) : (
           <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
             <div className="w-full max-w-md">
@@ -35,13 +42,19 @@ function App() {
                 <h3 className="text-sm font-semibold text-blue-800 mb-2">Comptes de démonstration :</h3>
                 <div className="space-y-2 text-xs">
                   <div className="bg-white p-2 rounded border">
-                    <strong>PQAP:</strong> 123456 / password123
+                    <strong>Suprême Admin:</strong> SUPREMEADMIN001 / password123
                   </div>
                   <div className="bg-white p-2 rounded border">
-                    <strong>Fonds Mutuels:</strong> 234567 / password123
+                    <strong>Admin Régulier:</strong> REGULARADMIN001 / password123
                   </div>
                   <div className="bg-white p-2 rounded border">
-                    <strong>Les Deux:</strong> 345678 / password123
+                    <strong>PQAP:</strong> PQAPUSER001 / password123
+                  </div>
+                  <div className="bg-white p-2 rounded border">
+                    <strong>Fonds Mutuels:</strong> FONDSUSER001 / password123
+                  </div>
+                  <div className="bg-white p-2 rounded border">
+                    <strong>Les Deux:</strong> BOTHUSER001 / password123
                   </div>
                 </div>
               </div>

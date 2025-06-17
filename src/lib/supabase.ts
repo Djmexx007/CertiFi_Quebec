@@ -68,7 +68,7 @@ export interface Podcast {
 export interface Question {
   id: string
   question_text: string
-  question_type: 'MCQ' | 'TrueFalse' | 'ShortAnswer'
+  question_type: 'MCQ' | 'TRUE_FALSE' | 'SHORT_ANSWER'
   options_json: Record<string, string>
   correct_answer_key: string
   explanation: string
