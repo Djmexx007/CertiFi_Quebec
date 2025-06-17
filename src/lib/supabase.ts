@@ -178,7 +178,7 @@ export interface AdminLog {
   }
 }
 
-// Utilisateurs de démonstration
+// Utilisateurs de démonstration avec métadonnées
 const DEMO_USERS = [
   {
     primerica_id: 'SUPREMEADMIN001',
@@ -191,7 +191,8 @@ const DEMO_USERS = [
     is_supreme_admin: true,
     current_xp: 5000,
     current_level: 8,
-    gamified_role: 'Maître Administrateur'
+    gamified_role: 'Maître Administrateur',
+    is_demo_user: true
   },
   {
     primerica_id: 'REGULARADMIN001',
@@ -204,7 +205,8 @@ const DEMO_USERS = [
     is_supreme_admin: false,
     current_xp: 3500,
     current_level: 6,
-    gamified_role: 'Administrateur Confirmé'
+    gamified_role: 'Administrateur Confirmé',
+    is_demo_user: true
   },
   {
     primerica_id: 'PQAPUSER001',
@@ -217,7 +219,8 @@ const DEMO_USERS = [
     is_supreme_admin: false,
     current_xp: 2750,
     current_level: 4,
-    gamified_role: 'Conseiller PQAP'
+    gamified_role: 'Conseiller PQAP',
+    is_demo_user: true
   },
   {
     primerica_id: 'FONDSUSER001',
@@ -230,7 +233,8 @@ const DEMO_USERS = [
     is_supreme_admin: false,
     current_xp: 4200,
     current_level: 7,
-    gamified_role: 'Expert Fonds Mutuels'
+    gamified_role: 'Expert Fonds Mutuels',
+    is_demo_user: true
   },
   {
     primerica_id: 'BOTHUSER001',
@@ -243,19 +247,15 @@ const DEMO_USERS = [
     is_supreme_admin: false,
     current_xp: 6800,
     current_level: 9,
-    gamified_role: 'Conseiller Expert'
+    gamified_role: 'Conseiller Expert',
+    is_demo_user: true
   }
 ];
 
-// API Helpers avec authentification simplifiée pour la démonstration
+// API Helpers avec authentification robuste
 export class SupabaseAPI {
   private static async makeRequest(url: string, options: RequestInit = {}) {
     console.log('🌐 Making request to:', url);
-    console.log('🔧 Request options:', {
-      method: options.method || 'GET',
-      headers: options.headers,
-      hasBody: !!options.body
-    });
 
     const controller = new AbortController()
     const timeout = parseInt(import.meta.env.VITE_APP_TIMEOUT || '30000')
@@ -275,17 +275,10 @@ export class SupabaseAPI {
 
       clearTimeout(timeoutId)
 
-      console.log('📡 Response status:', response.status);
-      
-      if (import.meta.env.DEV) {
-        console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
-      }
-
       if (!response.ok) {
         const errorText = await response.text()
         console.error('❌ Response error:', errorText);
         
-        // Gestion spécifique des erreurs de connexion
         if (response.status >= 500) {
           throw new Error('Erreur serveur temporaire. Veuillez réessayer.')
         } else if (response.status === 401) {
@@ -300,7 +293,6 @@ export class SupabaseAPI {
       }
 
       const result = await response.json()
-      console.log('✅ Response data received successfully');
       return result
     } catch (error) {
       clearTimeout(timeoutId)
@@ -319,35 +311,7 @@ export class SupabaseAPI {
     }
   }
 
-  private static async getAuthHeaders() {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers = {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-        'X-Client-Info': 'certifi-quebec-web'
-      }
-      
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`
-      }
-      
-      if (import.meta.env.DEV) {
-        console.log('🔑 Auth headers prepared:', {
-          hasApiKey: !!headers['apikey'],
-          hasAuth: !!headers['Authorization'],
-          authLength: headers['Authorization']?.length
-        });
-      }
-      
-      return headers
-    } catch (error) {
-      console.error('Erreur lors de la récupération des en-têtes d\'authentification:', error)
-      throw new Error('Erreur d\'authentification')
-    }
-  }
-
-  // Fonction pour créer les utilisateurs de démonstration
+  // Fonction pour créer les utilisateurs de démonstration avec métadonnées
   static async createDemoUsers() {
     console.log('🎭 Création des utilisateurs de démonstration...');
     
@@ -355,7 +319,7 @@ export class SupabaseAPI {
       for (const demoUser of DEMO_USERS) {
         console.log(`Création de l'utilisateur: ${demoUser.primerica_id}`);
         
-        // Créer l'utilisateur dans Supabase Auth
+        // Créer l'utilisateur dans Supabase Auth avec métadonnées is_demo_user
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
           email: demoUser.email,
           password: demoUser.password,
@@ -364,7 +328,8 @@ export class SupabaseAPI {
             primerica_id: demoUser.primerica_id,
             first_name: demoUser.first_name,
             last_name: demoUser.last_name,
-            initial_role: demoUser.initial_role
+            initial_role: demoUser.initial_role,
+            is_demo_user: true // Métadonnée cruciale pour l'identification
           }
         })
 
@@ -404,7 +369,52 @@ export class SupabaseAPI {
     }
   }
 
-  // Auth API - Utilise directement Supabase Auth avec fallback sur les utilisateurs de démonstration
+  // Fonction pour basculer l'état des utilisateurs de démonstration
+  static async toggleDemoUsers(activate: boolean) {
+    console.log(`🔄 ${activate ? 'Activation' : 'Désactivation'} des utilisateurs de démonstration...`);
+    
+    try {
+      // Récupérer tous les utilisateurs avec is_demo_user = true
+      const { data: demoUsers, error: fetchError } = await supabase.auth.admin.listUsers()
+      
+      if (fetchError) {
+        throw new Error(`Erreur lors de la récupération des utilisateurs: ${fetchError.message}`)
+      }
+
+      const demoUsersList = demoUsers.users.filter(user => 
+        user.user_metadata?.is_demo_user === true
+      )
+
+      console.log(`Trouvé ${demoUsersList.length} utilisateurs de démonstration`);
+
+      // Mettre à jour chaque utilisateur de démonstration
+      for (const user of demoUsersList) {
+        const { error: updateError } = await supabase.auth.admin.updateUserById(
+          user.id,
+          {
+            ban_duration: activate ? 'none' : 'infinity'
+          }
+        )
+
+        if (updateError) {
+          console.error(`Erreur lors de la mise à jour de ${user.email}:`, updateError.message);
+        } else {
+          console.log(`✅ ${user.email} ${activate ? 'activé' : 'désactivé'}`);
+        }
+      }
+
+      return {
+        success: true,
+        message: `${demoUsersList.length} utilisateurs de démonstration ${activate ? 'activés' : 'désactivés'}`,
+        count: demoUsersList.length
+      }
+    } catch (error) {
+      console.error('Erreur lors de la bascule des utilisateurs de démonstration:', error);
+      throw error
+    }
+  }
+
+  // Auth API - Utilise directement Supabase Auth
   static async register(data: {
     email: string
     password: string
@@ -434,7 +444,8 @@ export class SupabaseAPI {
             primerica_id: data.primerica_id,
             first_name: data.first_name,
             last_name: data.last_name,
-            initial_role: data.initial_role
+            initial_role: data.initial_role,
+            is_demo_user: false // Utilisateur réel
           }
         }
       })

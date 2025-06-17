@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, BookOpen, BarChart3, Settings, FileText, Trophy } from 'lucide-react';
+import { Users, BookOpen, BarChart3, Settings, FileText, Trophy, UserCog } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { User } from '../../lib/supabase';
@@ -7,12 +7,13 @@ import { UserManager } from './UserManager';
 import { QuestionManager } from './QuestionManager';
 import { ContentManager } from './ContentManager';
 import { AdminStats } from './AdminStats';
+import { DemoUserManager } from './DemoUserManager';
 
 interface AdminDashboardProps {
   user: User;
 }
 
-type AdminSection = 'stats' | 'users' | 'questions' | 'content' | 'settings';
+type AdminSection = 'stats' | 'users' | 'questions' | 'content' | 'demo-users' | 'settings';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [activeSection, setActiveSection] = useState<AdminSection>('stats');
@@ -23,37 +24,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       title: 'Statistiques',
       description: 'Vue d\'ensemble des performances',
       icon: BarChart3,
-      color: 'bg-blue-500'
+      color: 'bg-blue-500',
+      available: true
     },
     {
       id: 'users' as AdminSection,
       title: 'Gestion des Utilisateurs',
       description: 'Gérer les comptes et permissions',
       icon: Users,
-      color: 'bg-green-500'
+      color: 'bg-green-500',
+      available: true
+    },
+    {
+      id: 'demo-users' as AdminSection,
+      title: 'Utilisateurs Démo',
+      description: 'Gestion des comptes de démonstration',
+      icon: UserCog,
+      color: 'bg-purple-500',
+      available: user.is_supreme_admin // Seulement pour les suprême admins
     },
     {
       id: 'questions' as AdminSection,
       title: 'Gestion des Questions',
       description: 'Créer et modifier les questions d\'examen',
       icon: BookOpen,
-      color: 'bg-purple-500'
+      color: 'bg-purple-500',
+      available: true
     },
     {
       id: 'content' as AdminSection,
       title: 'Gestion du Contenu',
       description: 'Podcasts, examens et mini-jeux',
       icon: FileText,
-      color: 'bg-orange-500'
+      color: 'bg-orange-500',
+      available: true
     },
     {
       id: 'settings' as AdminSection,
       title: 'Paramètres',
       description: 'Configuration système',
       icon: Settings,
-      color: 'bg-gray-500'
+      color: 'bg-gray-500',
+      available: true
     }
-  ];
+  ].filter(section => section.available);
 
   const renderActiveSection = () => {
     switch (activeSection) {
@@ -61,6 +75,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
         return <AdminStats user={user} />;
       case 'users':
         return <UserManager user={user} />;
+      case 'demo-users':
+        return <DemoUserManager user={user} />;
       case 'questions':
         return <QuestionManager user={user} />;
       case 'content':
@@ -112,7 +128,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
 
       {/* Navigation Admin */}
       <div className="mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           {adminSections.map((section) => {
             const Icon = section.icon;
             const isActive = activeSection === section.id;
