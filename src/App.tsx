@@ -93,28 +93,6 @@ function App() {
                 onClearError={clearError}
                 error={error}
               />
-              
-              {/* Demo credentials for testing */}
-              <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h3 className="text-sm font-semibold text-blue-800 mb-2">Comptes de démonstration :</h3>
-                <div className="space-y-2 text-xs">
-                  <div className="bg-white p-2 rounded border">
-                    <strong>Suprême Admin:</strong> SUPREMEADMIN001 / password123
-                  </div>
-                  <div className="bg-white p-2 rounded border">
-                    <strong>Admin Régulier:</strong> REGULARADMIN001 / password123
-                  </div>
-                  <div className="bg-white p-2 rounded border">
-                    <strong>PQAP:</strong> PQAPUSER001 / password123
-                  </div>
-                  <div className="bg-white p-2 rounded border">
-                    <strong>Fonds Mutuels:</strong> FONDSUSER001 / password123
-                  </div>
-                  <div className="bg-white p-2 rounded border">
-                    <strong>Les Deux:</strong> BOTHUSER001 / password123
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}
