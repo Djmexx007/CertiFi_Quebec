@@ -330,10 +330,10 @@ export const useSupabaseAuth = () => {
     getInitialSession()
 
     // Écouter les changements d'authentification avec gestion d'erreur (seulement si pas en mode démo)
-    let subscription: any = null
+    let authListener: { data: { subscription: { unsubscribe: () => void } } } | null = null
     
     if (!isDemoMode()) {
-      const { data } = supabase.auth.onAuthStateChange(
+      authListener = supabase.auth.onAuthStateChange(
         async (event, session) => {
           console.log('Auth state changed:', event, session?.user?.id)
           
@@ -364,7 +364,6 @@ export const useSupabaseAuth = () => {
           }
         }
       )
-      subscription = data
     }
 
     // Écouter les changements de connectivité réseau
@@ -390,8 +389,8 @@ export const useSupabaseAuth = () => {
     window.addEventListener('offline', handleOffline)
 
     return () => {
-      if (subscription) {
-        subscription.unsubscribe()
+      if (authListener) {
+        authListener.data.subscription.unsubscribe()
       }
       clearTimeouts()
       window.removeEventListener('online', handleOnline)
