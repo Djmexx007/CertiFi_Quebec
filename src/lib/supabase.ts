@@ -205,10 +205,10 @@ export class SupabaseAPI {
     }
   }
 
-  private static getAuthHeaders() {
-    const session = supabase.auth.getSession()
+  private static async getAuthHeaders() {
+    const { data: { session } } = await supabase.auth.getSession()
     return session ? {
-      'Authorization': `Bearer ${session}`,
+      'Authorization': `Bearer ${session.access_token}`,
       'Content-Type': 'application/json'
     } : {
       'Content-Type': 'application/json'
@@ -247,20 +247,20 @@ export class SupabaseAPI {
   // User API
   static async getUserProfile() {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/profile`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async getPodcasts() {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/podcasts`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async markPodcastListened(podcast_id: string) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/podcast-listened`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify({ podcast_id })
     })
   }
@@ -270,33 +270,33 @@ export class SupabaseAPI {
     if (permission) url.searchParams.set('permission', permission)
     
     return this.makeRequest(url.toString(), {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async startExam(exam_id: string) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/start-exam?exam_id=${exam_id}`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async submitExam(exam_id: string, answers: Record<string, string>, time_spent_seconds: number) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/submit-exam`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify({ exam_id, answers, time_spent_seconds })
     })
   }
 
   static async getExamAttempts() {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/exam-attempts`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async getMinigames() {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/minigames`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
@@ -308,27 +308,27 @@ export class SupabaseAPI {
   }) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/submit-minigame-score`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify(data)
     })
   }
 
   static async getLeaderboard(type: 'global' | 'pqap' | 'fonds_mutuels' = 'global', limit = 50) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/leaderboard?type=${type}&limit=${limit}`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async getRecentActivities(limit = 20) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/recent-activities?limit=${limit}`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   // Admin API
   static async getDashboardStats() {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/dashboard-stats`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
@@ -344,13 +344,13 @@ export class SupabaseAPI {
     })
     
     return this.makeRequest(url.toString(), {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async getUser(userId: string) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/user/${userId}`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
@@ -361,7 +361,7 @@ export class SupabaseAPI {
   }) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/user-permissions/${userId}`, {
       method: 'PUT',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify(data)
     })
   }
@@ -369,14 +369,14 @@ export class SupabaseAPI {
   static async deleteUser(userId: string) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/user/${userId}`, {
       method: 'DELETE',
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async awardXP(userId: string, xpAmount: number, reason?: string) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/award-xp`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify({ user_id: userId, xp_amount: xpAmount, reason })
     })
   }
@@ -392,14 +392,14 @@ export class SupabaseAPI {
     })
     
     return this.makeRequest(url.toString(), {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
   static async createContent(type: string, data: any) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/create-content`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify({ type, data })
     })
   }
@@ -407,7 +407,7 @@ export class SupabaseAPI {
   static async updateContent(type: string, id: string, data: any) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/update-content`, {
       method: 'PUT',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify({ type, id, data })
     })
   }
@@ -415,14 +415,14 @@ export class SupabaseAPI {
   static async deleteContent(type: string, id: string) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/content`, {
       method: 'DELETE',
-      headers: this.getAuthHeaders(),
+      headers: await this.getAuthHeaders(),
       body: JSON.stringify({ type, id })
     })
   }
 
   static async getGlobalActivities(limit = 50) {
     return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/global-activities?limit=${limit}`, {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 
@@ -436,7 +436,7 @@ export class SupabaseAPI {
     })
     
     return this.makeRequest(url.toString(), {
-      headers: this.getAuthHeaders()
+      headers: await this.getAuthHeaders()
     })
   }
 }
