@@ -3,6 +3,7 @@ import { User, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Card } from './ui/Card';
+import { validateLoginCredentials } from '../services/authService';
 
 interface LoginCredentials {
   primerica_id: string;
@@ -48,6 +49,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const validateForm = (): boolean => {
     const newErrors: Partial<LoginCredentials> = {};
     
+    // Utiliser la fonction de validation du service
+    const validationError = validateLoginCredentials(credentials.primerica_id, credentials.password);
+    
     if (!credentials.primerica_id.trim()) {
       newErrors.primerica_id = 'Le numéro de représentant est requis';
     }
@@ -65,14 +69,22 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm() || disabled || isSubmitting) return;
+    console.log('🚀 Form submission started');
+    
+    if (!validateForm() || disabled || isSubmitting) {
+      console.warn('⚠️ Form validation failed or submission blocked');
+      return;
+    }
     
     setIsSubmitting(true);
     
     try {
+      console.log('📤 Calling onLogin with credentials');
       await onLogin(credentials);
+      console.log('✅ Login successful');
     } catch (error) {
-      console.error('Erreur de connexion:', error);
+      console.error('❌ Login error in form:', error);
+      // L'erreur sera gérée par le composant parent via la prop error
     } finally {
       setIsSubmitting(false);
     }
@@ -207,6 +219,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           </button>
         </p>
       </div>
+
+      {/* Informations de test pour le développement */}
+      {import.meta.env.DEV && (
+        <div className="mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="text-sm font-medium text-blue-900 mb-2">Compte de test :</h4>
+          <div className="text-xs text-blue-800 space-y-1">
+            <p><strong>Numéro :</strong> lul8p</p>
+            <p><strong>Mot de passe :</strong> Urze0912</p>
+          </div>
+        </div>
+      )}
     </Card>
   );
 };

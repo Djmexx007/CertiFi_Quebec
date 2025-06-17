@@ -346,6 +346,97 @@ serve(async (req) => {
 
       case 'POST': {
         switch (endpoint) {
+          case 'create-user': {
+            // NOUVEAU: Endpoint centralisé pour créer des utilisateurs réels
+            const body = await req.json()
+            const { email, password, primerica_id, first_name, last_name, initial_role } = body
+            
+            // Validation des données
+            if (!email || !password || !primerica_id || !first_name || !last_name || !initial_role) {
+              return new Response(
+                JSON.stringify({ error: 'Tous les champs sont requis' }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            // Vérifier si le primerica_id existe déjà
+            const { data: existingUser } = await supabase
+              .from('users')
+              .select('primerica_id')
+              .eq('primerica_id', primerica_id)
+              .single()
+
+            if (existingUser) {
+              return new Response(
+                JSON.stringify({ error: 'Ce numéro de représentant est déjà utilisé' }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            // Créer l'utilisateur avec Supabase Auth Admin
+            const supabaseAdmin = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            )
+
+            const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+              email: email,
+              password: password,
+              email_confirm: true,
+              user_metadata: {
+                primerica_id: primerica_id,
+                first_name: first_name,
+                last_name: last_name,
+                initial_role: initial_role
+              }
+            })
+
+            if (authError) {
+              return new Response(
+                JSON.stringify({ error: authError.message }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            // Créer le profil métier via RPC
+            const { error: profileError } = await supabase.rpc(
+              'create_user_with_permissions',
+              {
+                user_id: authData.user.id,
+                primerica_id_param: primerica_id,
+                email_param: email,
+                first_name_param: first_name,
+                last_name_param: last_name,
+                initial_role_param: initial_role
+              }
+            )
+
+            if (profileError) {
+              // Supprimer l'utilisateur Auth en cas d'erreur
+              await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+              return new Response(
+                JSON.stringify({ error: 'Erreur lors de la création du profil: ' + profileError.message }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            await logAdminAction('create_user', 'users', authData.user.id, { 
+              primerica_id, email, first_name, last_name, initial_role 
+            })
+
+            return new Response(
+              JSON.stringify({ 
+                message: 'Utilisateur créé avec succès',
+                user: {
+                  id: authData.user.id,
+                  email: authData.user.email,
+                  primerica_id: primerica_id
+                }
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
           case 'create-content': {
             const body = await req.json()
             const { type, data } = body
@@ -405,51 +496,21 @@ serve(async (req) => {
               )
             }
 
-            let result = null
-            try {
-              const { data, error } = await supabase.rpc('award_xp', {
-                user_uuid: user_id,
-                xp_amount: parseInt(xp_amount),
-                activity_type_param: 'admin_award',
-                activity_details: {
-                  reason: reason || 'Attribution manuelle par administrateur',
-                  admin_id: user.id
-                }
-              })
-              
-              if (error) throw error
-              result = data
-            } catch (rpcError) {
-              console.warn('RPC function not available, using direct update:', rpcError)
-              
-              // Fallback: mise à jour directe
-              const { data: userData, error: fetchError } = await supabase
-                .from('users')
-                .select('current_xp, current_level')
-                .eq('id', user_id)
-                .single()
-
-              if (fetchError) {
-                return new Response(
-                  JSON.stringify({ error: fetchError.message }),
-                  { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                )
+            const { data: result, error } = await supabase.rpc('award_xp', {
+              user_uuid: user_id,
+              xp_amount: parseInt(xp_amount),
+              activity_type_param: 'admin_award',
+              activity_details: {
+                reason: reason || 'Attribution manuelle par administrateur',
+                admin_id: user.id
               }
-
-              const newXp = userData.current_xp + parseInt(xp_amount)
-              const { error: updateError } = await supabase
-                .from('users')
-                .update({ current_xp: newXp })
-                .eq('id', user_id)
-
-              if (updateError) {
-                return new Response(
-                  JSON.stringify({ error: updateError.message }),
-                  { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                )
-              }
-
-              result = { xp_awarded: parseInt(xp_amount), new_xp: newXp }
+            })
+            
+            if (error) {
+              return new Response(
+                JSON.stringify({ error: error.message }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
             }
 
             await logAdminAction('award_xp', 'users', user_id, { xp_amount, reason })
@@ -628,7 +689,12 @@ serve(async (req) => {
               .single()
 
             // Supprimer l'utilisateur (cascade supprimera les données liées)
-            const { error } = await supabase.auth.admin.deleteUser(resourceId)
+            const supabaseAdmin = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            )
+
+            const { error } = await supabaseAdmin.auth.admin.deleteUser(resourceId)
 
             if (error) {
               return new Response(

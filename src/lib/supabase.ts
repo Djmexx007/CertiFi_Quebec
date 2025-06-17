@@ -19,7 +19,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
   global: {
     headers: {
-      'X-Client-Info': 'certifi-quebec-web'
+      'X-Client-Info': 'certifi-quebec-web',
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
     }
   }
 })
@@ -263,193 +265,6 @@ export class SupabaseAPI {
   // Mode démo - utilise des données locales simulées
   private static isDemoMode(): boolean {
     return import.meta.env.VITE_MOCK_API === 'true' || !supabaseUrl || !supabaseAnonKey
-  }
-
-  // Auth API - Utilise directement Supabase Auth
-  static async register(data: {
-    email: string
-    password: string
-    primerica_id: string
-    first_name: string
-    last_name: string
-    initial_role: 'PQAP' | 'FONDS_MUTUELS' | 'LES_DEUX'
-  }) {
-    console.log('📝 Registering user...');
-    
-    try {
-      // Validation côté client
-      if (!data.email || !data.password || !data.primerica_id) {
-        throw new Error('Tous les champs obligatoires doivent être remplis')
-      }
-
-      if (data.password.length < 6) {
-        throw new Error('Le mot de passe doit contenir au moins 6 caractères')
-      }
-
-      if (this.isDemoMode()) {
-        // Mode démo - simulation
-        return {
-          user: { id: 'demo-user', email: data.email },
-          session: { access_token: 'demo-token' }
-        };
-      }
-
-      // Utiliser Supabase Auth directement
-      const { data: authData, error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            primerica_id: data.primerica_id,
-            first_name: data.first_name,
-            last_name: data.last_name,
-            initial_role: data.initial_role
-          }
-        }
-      })
-
-      if (error) {
-        console.error('❌ Registration failed:', error);
-        throw new Error(error.message)
-      }
-
-      console.log('✅ Registration successful');
-      return {
-        user: authData.user,
-        session: authData.session,
-        message: 'Utilisateur créé avec succès'
-      };
-    } catch (error) {
-      console.error('❌ Registration failed:', error);
-      throw error
-    }
-  }
-
-  static async login(primerica_id: string, password: string) {
-    console.log('🔐 Attempting login for:', primerica_id);
-    
-    try {
-      // Validation côté client
-      if (!primerica_id || !password) {
-        throw new Error('Numéro de représentant et mot de passe requis')
-      }
-
-      if (this.isDemoMode()) {
-        // Mode démo complet - retourner des données simulées
-        const mockUser = {
-          id: `demo-${primerica_id}`,
-          email: `${primerica_id.toLowerCase()}@demo.com`,
-          user_metadata: {
-            primerica_id: primerica_id,
-            first_name: 'Demo',
-            last_name: 'User'
-          }
-        };
-
-        return {
-          message: 'Connexion réussie (mode démo)',
-          session: { 
-            access_token: 'demo-token',
-            user: mockUser
-          },
-          user: mockUser
-        };
-      }
-
-      // Pour les utilisateurs réels, procédure normale
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('email, is_active')
-        .eq('primerica_id', primerica_id)
-        .single()
-
-      if (userError || !userData) {
-        throw new Error('Numéro de représentant introuvable')
-      }
-
-      if (!userData.is_active) {
-        throw new Error('Compte désactivé. Contactez l\'administrateur.')
-      }
-
-      // Connexion avec email/password
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email: userData.email,
-        password: password
-      })
-
-      if (signInError) {
-        console.error('❌ Login failed:', signInError);
-        throw new Error('Mot de passe incorrect')
-      }
-
-      console.log('✅ Login successful');
-      return {
-        message: 'Connexion réussie',
-        session: signInData.session,
-        user: signInData.user
-      };
-    } catch (error) {
-      console.error('❌ Login failed:', error);
-      throw error
-    }
-  }
-
-  static async resetPassword(email: string) {
-    console.log('🔄 Resetting password for:', email);
-    
-    try {
-      if (!email) {
-        throw new Error('Adresse email requise')
-      }
-
-      if (this.isDemoMode()) {
-        return { message: 'Email de réinitialisation envoyé (mode démo)' };
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`
-      })
-
-      if (error) {
-        console.error('❌ Password reset error:', error);
-        throw new Error(error.message)
-      }
-
-      console.log('✅ Password reset email sent');
-      return { message: 'Email de réinitialisation envoyé' }
-    } catch (error) {
-      console.error('❌ Password reset failed:', error);
-      throw error
-    }
-  }
-
-  static async updatePassword(newPassword: string) {
-    console.log('🔄 Updating password...');
-    
-    try {
-      if (!newPassword || newPassword.length < 6) {
-        throw new Error('Le mot de passe doit contenir au moins 6 caractères')
-      }
-
-      if (this.isDemoMode()) {
-        return { message: 'Mot de passe mis à jour (mode démo)' };
-      }
-
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      })
-
-      if (error) {
-        console.error('❌ Password update error:', error);
-        throw new Error(error.message)
-      }
-
-      console.log('✅ Password updated successfully');
-      return { message: 'Mot de passe mis à jour avec succès' }
-    } catch (error) {
-      console.error('❌ Password update failed:', error);
-      throw error
-    }
   }
 
   // User API
@@ -916,5 +731,29 @@ export class SupabaseAPI {
   static async getAdminLogs(params: any) {
     console.log('📜 Fetching admin logs...');
     return { logs: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } };
+  }
+
+  // Nouveau: Endpoint centralisé pour créer des utilisateurs réels
+  static async createUser(userData: {
+    email: string
+    password: string
+    primerica_id: string
+    first_name: string
+    last_name: string
+    initial_role: 'PQAP' | 'FONDS_MUTUELS' | 'LES_DEUX'
+  }) {
+    console.log('👤 Creating new user:', userData.primerica_id);
+    
+    try {
+      const response = await this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/create-user`, {
+        method: 'POST',
+        body: JSON.stringify(userData)
+      });
+
+      return response;
+    } catch (error) {
+      console.error('❌ User creation failed:', error);
+      throw error;
+    }
   }
 }
