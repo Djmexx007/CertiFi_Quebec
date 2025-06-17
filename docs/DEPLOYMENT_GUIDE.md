@@ -43,10 +43,12 @@
 
 4. Déployer les fonctions :
    ```bash
-   supabase functions deploy auth-api
+   supabase functions deploy auth-api --no-verify-jwt
    supabase functions deploy user-api  
    supabase functions deploy admin-api
    ```
+
+   **Important**: La fonction `auth-api` doit être déployée avec le flag `--no-verify-jwt` car elle gère l'authentification publique (login/register) et ne doit pas exiger de JWT.
 
 ### 2. Configuration de l'Application
 
@@ -179,7 +181,7 @@ SELECT cleanup_old_activities();
 ### Mises à jour
 1. Tester en environnement de développement
 2. Sauvegarder la base de données
-3. Déployer les nouvelles fonctions
+3. Déployer les nouvelles fonctions (n'oubliez pas le flag `--no-verify-jwt` pour auth-api)
 4. Exécuter les migrations si nécessaire
 5. Valider le fonctionnement
 
@@ -193,6 +195,13 @@ SELECT cleanup_old_activities();
 supabase functions logs auth-api
 supabase functions logs user-api
 supabase functions logs admin-api
+```
+
+#### Erreur 401 "Missing authorization header" sur auth-api
+Cette erreur indique que la fonction `auth-api` a été déployée avec la vérification JWT activée. Pour corriger :
+```bash
+# Redéployer la fonction auth-api sans vérification JWT
+supabase functions deploy auth-api --no-verify-jwt
 ```
 
 #### Erreurs RLS
