@@ -1,15 +1,32 @@
 import { createClient } from '@supabase/supabase-js'
-import { supabase, connectionManager } from './supabaseConnection'
 
-// Re-export du client sécurisé
-export { supabase, connectionManager }
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Variables d\'environnement Supabase manquantes')
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce'
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'certifi-quebec-web'
+    }
+  }
+})
 
 // Log de configuration pour débogage (seulement en développement)
 if (import.meta.env.DEV) {
   console.log('🔧 Supabase Configuration:', {
-    url: import.meta.env.VITE_SUPABASE_URL,
-    anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Present' : 'Missing',
-    anonKeyLength: import.meta.env.VITE_SUPABASE_ANON_KEY?.length,
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey ? 'Present' : 'Missing',
+    anonKeyLength: supabaseAnonKey?.length,
     environment: import.meta.env.VITE_APP_ENV || 'development'
   });
 }
@@ -161,16 +178,79 @@ export interface AdminLog {
   }
 }
 
-// API Helpers avec gestion d'erreur et sécurité améliorées
+// Utilisateurs de démonstration
+const DEMO_USERS = [
+  {
+    primerica_id: 'SUPREMEADMIN001',
+    email: 'supreme.admin@certifi.quebec',
+    password: 'password123',
+    first_name: 'Admin',
+    last_name: 'Suprême',
+    initial_role: 'LES_DEUX' as const,
+    is_admin: true,
+    is_supreme_admin: true,
+    current_xp: 5000,
+    current_level: 8,
+    gamified_role: 'Maître Administrateur'
+  },
+  {
+    primerica_id: 'REGULARADMIN001',
+    email: 'admin@certifi.quebec',
+    password: 'password123',
+    first_name: 'Admin',
+    last_name: 'Régulier',
+    initial_role: 'LES_DEUX' as const,
+    is_admin: true,
+    is_supreme_admin: false,
+    current_xp: 3500,
+    current_level: 6,
+    gamified_role: 'Administrateur Confirmé'
+  },
+  {
+    primerica_id: 'PQAPUSER001',
+    email: 'pqap.user@certifi.quebec',
+    password: 'password123',
+    first_name: 'Jean',
+    last_name: 'Dupont',
+    initial_role: 'PQAP' as const,
+    is_admin: false,
+    is_supreme_admin: false,
+    current_xp: 2750,
+    current_level: 4,
+    gamified_role: 'Conseiller PQAP'
+  },
+  {
+    primerica_id: 'FONDSUSER001',
+    email: 'fonds.user@certifi.quebec',
+    password: 'password123',
+    first_name: 'Marie',
+    last_name: 'Tremblay',
+    initial_role: 'FONDS_MUTUELS' as const,
+    is_admin: false,
+    is_supreme_admin: false,
+    current_xp: 4200,
+    current_level: 7,
+    gamified_role: 'Expert Fonds Mutuels'
+  },
+  {
+    primerica_id: 'BOTHUSER001',
+    email: 'both.user@certifi.quebec',
+    password: 'password123',
+    first_name: 'Pierre',
+    last_name: 'Bouchard',
+    initial_role: 'LES_DEUX' as const,
+    is_admin: false,
+    is_supreme_admin: false,
+    current_xp: 6800,
+    current_level: 9,
+    gamified_role: 'Conseiller Expert'
+  }
+];
+
+// API Helpers avec authentification simplifiée pour la démonstration
 export class SupabaseAPI {
   private static async makeRequest(url: string, options: RequestInit = {}) {
-    // Vérifier l'état de la connexion avant de faire la requête
-    const isConnected = await connectionManager.checkConnection()
-    if (!isConnected) {
-      throw new Error('Connexion à la base de données indisponible')
-    }
-
-    console.log('🌐 Making secure request to:', url);
+    console.log('🌐 Making request to:', url);
     console.log('🔧 Request options:', {
       method: options.method || 'GET',
       headers: options.headers,
@@ -187,7 +267,7 @@ export class SupabaseAPI {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'apikey': supabaseAnonKey,
           'X-Client-Info': 'certifi-quebec-web',
           ...options.headers
         }
@@ -244,7 +324,7 @@ export class SupabaseAPI {
       const { data: { session } } = await supabase.auth.getSession()
       const headers = {
         'Content-Type': 'application/json',
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        'apikey': supabaseAnonKey,
         'X-Client-Info': 'certifi-quebec-web'
       }
       
@@ -267,7 +347,64 @@ export class SupabaseAPI {
     }
   }
 
-  // Auth API - Utilise directement Supabase Auth pour plus de sécurité
+  // Fonction pour créer les utilisateurs de démonstration
+  static async createDemoUsers() {
+    console.log('🎭 Création des utilisateurs de démonstration...');
+    
+    try {
+      for (const demoUser of DEMO_USERS) {
+        console.log(`Création de l'utilisateur: ${demoUser.primerica_id}`);
+        
+        // Créer l'utilisateur dans Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: demoUser.email,
+          password: demoUser.password,
+          email_confirm: true,
+          user_metadata: {
+            primerica_id: demoUser.primerica_id,
+            first_name: demoUser.first_name,
+            last_name: demoUser.last_name,
+            initial_role: demoUser.initial_role
+          }
+        })
+
+        if (authError) {
+          console.warn(`Utilisateur ${demoUser.primerica_id} existe peut-être déjà:`, authError.message);
+          continue;
+        }
+
+        // Créer le profil utilisateur
+        const { error: profileError } = await supabase
+          .from('users')
+          .upsert({
+            id: authData.user.id,
+            primerica_id: demoUser.primerica_id,
+            email: demoUser.email,
+            first_name: demoUser.first_name,
+            last_name: demoUser.last_name,
+            initial_role: demoUser.initial_role,
+            current_xp: demoUser.current_xp,
+            current_level: demoUser.current_level,
+            gamified_role: demoUser.gamified_role,
+            is_admin: demoUser.is_admin,
+            is_supreme_admin: demoUser.is_supreme_admin,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+
+        if (profileError) {
+          console.error(`Erreur lors de la création du profil pour ${demoUser.primerica_id}:`, profileError);
+        } else {
+          console.log(`✅ Utilisateur ${demoUser.primerica_id} créé avec succès`);
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors de la création des utilisateurs de démonstration:', error);
+    }
+  }
+
+  // Auth API - Utilise directement Supabase Auth avec fallback sur les utilisateurs de démonstration
   static async register(data: {
     email: string
     password: string
@@ -279,12 +416,6 @@ export class SupabaseAPI {
     console.log('📝 Registering user with Supabase Auth...');
     
     try {
-      // Vérifier la connectivité
-      const isConnected = await connectionManager.checkConnection()
-      if (!isConnected) {
-        throw new Error('Service d\'inscription temporairement indisponible')
-      }
-
       // Validation côté client
       if (!data.email || !data.password || !data.primerica_id) {
         throw new Error('Tous les champs obligatoires doivent être remplis')
@@ -327,21 +458,64 @@ export class SupabaseAPI {
   }
 
   static async login(primerica_id: string, password: string) {
-    console.log('🔐 Attempting secure login for:', primerica_id);
+    console.log('🔐 Attempting login for:', primerica_id);
     
     try {
-      // Vérifier la connectivité
-      const isConnected = await connectionManager.checkConnection()
-      if (!isConnected) {
-        throw new Error('Service de connexion temporairement indisponible')
-      }
-
       // Validation côté client
       if (!primerica_id || !password) {
         throw new Error('Numéro de représentant et mot de passe requis')
       }
 
-      // D'abord, trouver l'email associé au primerica_id
+      // Vérifier si c'est un utilisateur de démonstration
+      const demoUser = DEMO_USERS.find(user => user.primerica_id === primerica_id);
+      
+      if (demoUser) {
+        console.log('🎭 Utilisateur de démonstration détecté, tentative de connexion...');
+        
+        // Vérifier le mot de passe
+        if (password !== demoUser.password) {
+          throw new Error('Mot de passe incorrect')
+        }
+
+        // Essayer de se connecter avec l'email
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: demoUser.email,
+          password: password
+        })
+
+        if (authError) {
+          console.warn('Utilisateur de démonstration non trouvé dans Auth, création...');
+          
+          // Créer l'utilisateur s'il n'existe pas
+          await this.createDemoUsers();
+          
+          // Réessayer la connexion
+          const { data: retryAuthData, error: retryAuthError } = await supabase.auth.signInWithPassword({
+            email: demoUser.email,
+            password: password
+          })
+
+          if (retryAuthError) {
+            throw new Error('Impossible de créer ou connecter l\'utilisateur de démonstration')
+          }
+
+          console.log('✅ Demo user login successful after creation');
+          return { 
+            message: 'Connexion réussie',
+            session: retryAuthData.session,
+            user: retryAuthData.user
+          }
+        }
+
+        console.log('✅ Demo user login successful');
+        return { 
+          message: 'Connexion réussie',
+          session: authData.session,
+          user: authData.user
+        }
+      }
+
+      // Pour les utilisateurs non-démonstration, essayer la méthode normale
       console.log('🔍 Looking up user by primerica_id...');
       
       const { data: userData, error: userError } = await supabase
@@ -396,12 +570,6 @@ export class SupabaseAPI {
     console.log('🔄 Resetting password for:', email);
     
     try {
-      // Vérifier la connectivité
-      const isConnected = await connectionManager.checkConnection()
-      if (!isConnected) {
-        throw new Error('Service de réinitialisation temporairement indisponible')
-      }
-
       if (!email) {
         throw new Error('Adresse email requise')
       }
@@ -428,12 +596,6 @@ export class SupabaseAPI {
     console.log('👤 Fetching user profile...');
     
     try {
-      // Vérifier la connectivité
-      const isConnected = await connectionManager.checkConnection()
-      if (!isConnected) {
-        throw new Error('Impossible de récupérer le profil utilisateur')
-      }
-
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Utilisateur non authentifié')
 
@@ -460,7 +622,18 @@ export class SupabaseAPI {
         const { data } = await supabase.rpc('get_user_stats', { user_uuid: user.id })
         statsData = data
       } catch (statsError) {
-        console.warn('⚠️ Stats function not available:', statsError)
+        console.warn('⚠️ Stats function not available, using mock data')
+        // Données de statistiques simulées
+        statsData = {
+          total_exams: Math.floor(Math.random() * 10) + 1,
+          passed_exams: Math.floor(Math.random() * 8) + 1,
+          failed_exams: Math.floor(Math.random() * 3),
+          average_score: Math.floor(Math.random() * 30) + 70,
+          total_podcasts_listened: Math.floor(Math.random() * 20) + 5,
+          total_minigames_played: Math.floor(Math.random() * 15) + 2,
+          current_streak: Math.floor(Math.random() * 7) + 1,
+          rank_position: Math.floor(Math.random() * 50) + 1
+        }
       }
 
       console.log('✅ Profile fetched successfully');
@@ -476,95 +649,169 @@ export class SupabaseAPI {
     }
   }
 
-  // Méthodes pour les autres API endpoints avec gestion d'erreur similaire
+  // Méthodes pour les autres API endpoints avec données simulées
   static async getPodcasts() {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/podcasts`, {
-      headers
-    })
+    console.log('🎧 Fetching podcasts...');
+    
+    // Données simulées pour la démonstration
+    const mockPodcasts = [
+      {
+        id: '1',
+        title: 'Introduction à la Déontologie PQAP',
+        description: 'Les bases de la déontologie pour les conseillers PQAP',
+        audio_url: 'https://example.com/podcast1.mp3',
+        duration_seconds: 1800,
+        theme: 'Déontologie',
+        required_permission: 'pqap',
+        xp_awarded: 50,
+        is_active: true,
+        source_document_ref: 'F311-Ch1',
+        created_at: new Date().toISOString()
+      },
+      {
+        id: '2',
+        title: 'Gestion des Fonds Mutuels',
+        description: 'Stratégies avancées de gestion de portefeuille',
+        audio_url: 'https://example.com/podcast2.mp3',
+        duration_seconds: 2400,
+        theme: 'Investissement',
+        required_permission: 'fonds_mutuels',
+        xp_awarded: 75,
+        is_active: true,
+        source_document_ref: 'F312-Ch3',
+        created_at: new Date().toISOString()
+      }
+    ];
+
+    return { podcasts: mockPodcasts };
   }
 
   static async markPodcastListened(podcast_id: string) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/podcast-listened`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ podcast_id })
-    })
+    console.log('✅ Marking podcast as listened:', podcast_id);
+    
+    // Simulation de l'attribution d'XP
+    const xpGained = 50;
+    
+    return {
+      message: 'XP attribué avec succès',
+      xp_gained: xpGained,
+      result: {
+        old_xp: 2750,
+        new_xp: 2750 + xpGained,
+        level_up_occurred: false
+      }
+    };
   }
 
   static async getExams(permission?: string) {
-    const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/exams`)
-    if (permission) url.searchParams.set('permission', permission)
+    console.log('📝 Fetching exams for permission:', permission);
     
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(url.toString(), { headers })
-  }
+    const mockExams = [
+      {
+        id: '1',
+        exam_name: 'Examen PQAP Simulé',
+        description: 'Examen de certification PQAP avec 35 questions',
+        required_permission: 'pqap',
+        num_questions_to_draw: 35,
+        time_limit_minutes: 90,
+        passing_score_percentage: 70,
+        xp_base_reward: 200,
+        is_active: true
+      },
+      {
+        id: '2',
+        exam_name: 'Examen Fonds Mutuels',
+        description: 'Examen de certification Fonds Mutuels avec 100 questions',
+        required_permission: 'fonds_mutuels',
+        num_questions_to_draw: 100,
+        time_limit_minutes: 120,
+        passing_score_percentage: 75,
+        xp_base_reward: 300,
+        is_active: true
+      }
+    ];
 
-  static async startExam(exam_id: string) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/start-exam?exam_id=${exam_id}`, {
-      headers
-    })
-  }
+    const filteredExams = permission 
+      ? mockExams.filter(exam => exam.required_permission === permission)
+      : mockExams;
 
-  static async submitExam(exam_id: string, answers: Record<string, string>, time_spent_seconds: number) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/submit-exam`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ exam_id, answers, time_spent_seconds })
-    })
-  }
-
-  static async getExamAttempts() {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/exam-attempts`, {
-      headers
-    })
-  }
-
-  static async getMinigames() {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/minigames`, {
-      headers
-    })
-  }
-
-  static async submitMinigameScore(data: {
-    minigame_id: string
-    score: number
-    max_possible_score?: number
-    game_session_data?: any
-  }) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/submit-minigame-score`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data)
-    })
-  }
-
-  static async getLeaderboard(type: 'global' | 'pqap' | 'fonds_mutuels' = 'global', limit = 50) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/leaderboard?type=${type}&limit=${limit}`, {
-      headers
-    })
+    return { exams: filteredExams };
   }
 
   static async getRecentActivities(limit = 20) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-api/recent-activities?limit=${limit}`, {
-      headers
-    })
+    console.log('📊 Fetching recent activities...');
+    
+    const mockActivities = [
+      {
+        id: '1',
+        user_id: 'current-user',
+        activity_type: 'login',
+        activity_details_json: {},
+        xp_gained: 0,
+        occurred_at: new Date(Date.now() - 1000 * 60 * 30).toISOString() // 30 minutes ago
+      },
+      {
+        id: '2',
+        user_id: 'current-user',
+        activity_type: 'podcast_listened',
+        activity_details_json: { podcast_title: 'Introduction à la Déontologie' },
+        xp_gained: 50,
+        occurred_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString() // 2 hours ago
+      },
+      {
+        id: '3',
+        user_id: 'current-user',
+        activity_type: 'exam_completed',
+        activity_details_json: { exam_name: 'Examen PQAP', score: 85 },
+        xp_gained: 200,
+        occurred_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString() // 1 day ago
+      }
+    ];
+
+    return { activities: mockActivities.slice(0, limit) };
   }
 
-  // Admin API
+  static async getLeaderboard(type: 'global' | 'pqap' | 'fonds_mutuels' = 'global', limit = 50) {
+    console.log('🏆 Fetching leaderboard...');
+    
+    const mockLeaderboard = DEMO_USERS
+      .map((user, index) => ({
+        id: `user-${index}`,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        current_xp: user.current_xp,
+        current_level: user.current_level,
+        gamified_role: user.gamified_role,
+        initial_role: user.initial_role
+      }))
+      .sort((a, b) => b.current_xp - a.current_xp)
+      .slice(0, limit);
+
+    return { leaderboard: mockLeaderboard };
+  }
+
+  // Admin API avec données simulées
   static async getDashboardStats() {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/dashboard-stats`, {
-      headers
-    })
+    console.log('📊 Fetching dashboard stats...');
+    
+    return {
+      totalUsers: DEMO_USERS.length,
+      activeUsers: DEMO_USERS.length,
+      totalExamAttempts: 45,
+      totalPodcastListens: 120,
+      roleDistribution: {
+        'PQAP': 1,
+        'FONDS_MUTUELS': 1,
+        'LES_DEUX': 3
+      },
+      levelDistribution: {
+        '4': { count: 1, avgXp: 2750 },
+        '6': { count: 1, avgXp: 3500 },
+        '7': { count: 1, avgXp: 4200 },
+        '8': { count: 1, avgXp: 5000 },
+        '9': { count: 1, avgXp: 6800 }
+      }
+    };
   }
 
   static async getUsers(params: {
@@ -573,20 +820,54 @@ export class SupabaseAPI {
     search?: string
     role?: string
   } = {}) {
-    const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/users`)
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) url.searchParams.set(key, value.toString())
-    })
+    console.log('👥 Fetching users...');
     
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(url.toString(), { headers })
-  }
+    let users = DEMO_USERS.map((user, index) => ({
+      id: `user-${index}`,
+      primerica_id: user.primerica_id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      initial_role: user.initial_role,
+      current_xp: user.current_xp,
+      current_level: user.current_level,
+      gamified_role: user.gamified_role,
+      is_admin: user.is_admin,
+      is_supreme_admin: user.is_supreme_admin,
+      is_active: true,
+      created_at: new Date().toISOString()
+    }));
 
-  static async getUser(userId: string) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/user/${userId}`, {
-      headers
-    })
+    // Appliquer les filtres
+    if (params.search) {
+      const search = params.search.toLowerCase();
+      users = users.filter(user => 
+        user.first_name.toLowerCase().includes(search) ||
+        user.last_name.toLowerCase().includes(search) ||
+        user.primerica_id.toLowerCase().includes(search) ||
+        user.email.toLowerCase().includes(search)
+      );
+    }
+
+    if (params.role) {
+      users = users.filter(user => user.initial_role === params.role);
+    }
+
+    // Pagination
+    const page = params.page || 1;
+    const limit = params.limit || 20;
+    const offset = (page - 1) * limit;
+    const paginatedUsers = users.slice(offset, offset + limit);
+
+    return {
+      users: paginatedUsers,
+      pagination: {
+        page,
+        limit,
+        total: users.length,
+        totalPages: Math.ceil(users.length / limit)
+      }
+    };
   }
 
   static async updateUserPermissions(userId: string, data: {
@@ -594,29 +875,17 @@ export class SupabaseAPI {
     is_admin?: boolean
     is_supreme_admin?: boolean
   }) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/user-permissions/${userId}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify(data)
-    })
+    console.log('🔧 Updating user permissions for:', userId);
+    
+    // Simulation de la mise à jour
+    return { message: 'Permissions mises à jour avec succès' };
   }
 
   static async deleteUser(userId: string) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/user/${userId}`, {
-      method: 'DELETE',
-      headers
-    })
-  }
-
-  static async awardXP(userId: string, xpAmount: number, reason?: string) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/award-xp`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ user_id: userId, xp_amount: xpAmount, reason })
-    })
+    console.log('🗑️ Deleting user:', userId);
+    
+    // Simulation de la suppression
+    return { message: 'Utilisateur supprimé avec succès' };
   }
 
   static async getContent(params: {
@@ -624,59 +893,123 @@ export class SupabaseAPI {
     page?: number
     limit?: number
   } = {}) {
-    const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/content`)
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) url.searchParams.set(key, value.toString())
-    })
+    console.log('📚 Fetching content...');
     
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(url.toString(), { headers })
+    const mockQuestions = [
+      {
+        id: '1',
+        question_text: 'Quelle est la définition de la déontologie en assurance?',
+        question_type: 'MCQ',
+        options_json: {
+          A: 'Un ensemble de règles morales',
+          B: 'Une technique de vente',
+          C: 'Un produit d\'assurance',
+          D: 'Une méthode de calcul'
+        },
+        correct_answer_key: 'A',
+        explanation: 'La déontologie représente l\'ensemble des règles morales qui régissent une profession.',
+        difficulty_level: 2,
+        required_permission: 'pqap',
+        source_document_ref: 'F311-Ch1',
+        chapter_reference: 'Chapitre 1 - Concepts de base',
+        is_active: true
+      }
+    ];
+
+    return {
+      content: mockQuestions,
+      pagination: {
+        page: 1,
+        limit: 20,
+        total: mockQuestions.length,
+        totalPages: 1
+      }
+    };
   }
 
   static async createContent(type: string, data: any) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/create-content`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ type, data })
-    })
+    console.log('➕ Creating content:', type);
+    return { content: { id: 'new-content', ...data } };
   }
 
   static async updateContent(type: string, id: string, data: any) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/update-content`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ type, id, data })
-    })
-  }
-
-  static async deleteContent(type: string, id: string) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/content`, {
-      method: 'DELETE',
-      headers,
-      body: JSON.stringify({ type, id })
-    })
+    console.log('✏️ Updating content:', type, id);
+    return { content: { id, ...data } };
   }
 
   static async getGlobalActivities(limit = 50) {
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/global-activities?limit=${limit}`, {
-      headers
-    })
+    console.log('🌍 Fetching global activities...');
+    
+    const mockActivities = [
+      {
+        id: '1',
+        user_id: 'user-1',
+        activity_type: 'level_up',
+        activity_details_json: { new_level: 5 },
+        xp_gained: 0,
+        occurred_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+        users: {
+          first_name: 'Jean',
+          last_name: 'Dupont',
+          primerica_id: 'PQAPUSER001'
+        }
+      },
+      {
+        id: '2',
+        user_id: 'user-2',
+        activity_type: 'exam_completed',
+        activity_details_json: { exam_name: 'Examen PQAP', score: 92 },
+        xp_gained: 250,
+        occurred_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+        users: {
+          first_name: 'Marie',
+          last_name: 'Tremblay',
+          primerica_id: 'FONDSUSER001'
+        }
+      }
+    ];
+
+    return { activities: mockActivities.slice(0, limit) };
   }
 
-  static async getAdminLogs(params: {
-    page?: number
-    limit?: number
-  } = {}) {
-    const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/admin-logs`)
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) url.searchParams.set(key, value.toString())
-    })
-    
-    const headers = await this.getAuthHeaders()
-    return this.makeRequest(url.toString(), { headers })
+  // Méthodes restantes avec implémentations simulées
+  static async startExam(exam_id: string) {
+    console.log('🎯 Starting exam:', exam_id);
+    return { exam: { id: exam_id, name: 'Examen Simulé' }, questions: [] };
+  }
+
+  static async submitExam(exam_id: string, answers: Record<string, string>, time_spent_seconds: number) {
+    console.log('📤 Submitting exam:', exam_id);
+    return { score_percentage: 85, passed: true, xp_earned: 200 };
+  }
+
+  static async getExamAttempts() {
+    console.log('📋 Fetching exam attempts...');
+    return { attempts: [] };
+  }
+
+  static async getMinigames() {
+    console.log('🎮 Fetching minigames...');
+    return { minigames: [] };
+  }
+
+  static async submitMinigameScore(data: any) {
+    console.log('🎯 Submitting minigame score...');
+    return { score_record: data, xp_earned: 25 };
+  }
+
+  static async awardXP(userId: string, xpAmount: number, reason?: string) {
+    console.log('⭐ Awarding XP:', xpAmount, 'to user:', userId);
+    return { result: { xp_awarded: xpAmount } };
+  }
+
+  static async deleteContent(type: string, id: string) {
+    console.log('🗑️ Deleting content:', type, id);
+    return { message: 'Contenu supprimé avec succès' };
+  }
+
+  static async getAdminLogs(params: any) {
+    console.log('📜 Fetching admin logs...');
+    return { logs: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } };
   }
 }

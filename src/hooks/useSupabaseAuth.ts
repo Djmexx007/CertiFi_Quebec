@@ -67,7 +67,7 @@ export const useSupabaseAuth = () => {
           }
         })
         clearTimeout(timeoutId)
-        return response.ok
+        return response.ok || response.status === 404 // 404 est OK, cela signifie que le serveur répond
       } catch (fetchError) {
         clearTimeout(timeoutId)
         return false
