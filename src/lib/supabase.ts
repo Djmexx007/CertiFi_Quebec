@@ -344,6 +344,76 @@ export class SupabaseAPI {
     return DEMO_USERS.find(user => user.primerica_id === primerica_id);
   }
 
+  // Fonction pour créer automatiquement un utilisateur de démonstration s'il n'existe pas
+  private static async createDemoUserIfNotExists(demoUserData: typeof DEMO_USERS[0]): Promise<boolean> {
+    try {
+      console.log(`🎭 Tentative de création automatique de l'utilisateur: ${demoUserData.primerica_id}`);
+
+      // Vérifier si l'utilisateur existe déjà
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('primerica_id')
+        .eq('primerica_id', demoUserData.primerica_id)
+        .maybeSingle();
+
+      if (existingUser) {
+        console.log(`Utilisateur ${demoUserData.primerica_id} existe déjà`);
+        return true;
+      }
+
+      // Créer l'utilisateur dans Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: demoUserData.email,
+        password: demoUserData.password,
+        email_confirm: true,
+        user_metadata: {
+          primerica_id: demoUserData.primerica_id,
+          first_name: demoUserData.first_name,
+          last_name: demoUserData.last_name,
+          initial_role: demoUserData.initial_role,
+          is_demo_user: true
+        }
+      });
+
+      if (authError) {
+        console.error(`Erreur création auth pour ${demoUserData.primerica_id}:`, authError);
+        return false;
+      }
+
+      // Créer le profil utilisateur
+      const { error: profileError } = await supabase
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          primerica_id: demoUserData.primerica_id,
+          email: demoUserData.email,
+          first_name: demoUserData.first_name,
+          last_name: demoUserData.last_name,
+          initial_role: demoUserData.initial_role,
+          current_xp: demoUserData.current_xp,
+          current_level: demoUserData.current_level,
+          gamified_role: demoUserData.gamified_role,
+          is_admin: demoUserData.is_admin,
+          is_supreme_admin: demoUserData.is_supreme_admin,
+          is_active: true
+        });
+
+      if (profileError) {
+        console.error(`Erreur création profil pour ${demoUserData.primerica_id}:`, profileError);
+        // Nettoyer l'utilisateur auth si la création du profil échoue
+        await supabase.auth.admin.deleteUser(authData.user.id);
+        return false;
+      }
+
+      console.log(`✅ Utilisateur ${demoUserData.primerica_id} créé automatiquement avec succès`);
+      return true;
+
+    } catch (error) {
+      console.error(`Erreur lors de la création automatique de ${demoUserData.primerica_id}:`, error);
+      return false;
+    }
+  }
+
   // Auth API - Utilise directement Supabase Auth
   static async register(data: {
     email: string
@@ -469,9 +539,29 @@ export class SupabaseAPI {
           throw new Error('Erreur lors de la vérification du compte')
         }
 
-        // Si l'utilisateur n'existe pas dans la base de données, suggérer la création
+        // Si l'utilisateur n'existe pas dans la base de données, essayer de le créer automatiquement
         if (!userData) {
-          throw new Error(`Compte de démonstration "${primerica_id}" non trouvé. Veuillez demander à un administrateur suprême de créer les comptes de démonstration via le panneau d'administration.`)
+          console.log(`🎭 Utilisateur de démonstration ${primerica_id} non trouvé, tentative de création automatique...`);
+          
+          const created = await this.createDemoUserIfNotExists(demoUserData);
+          
+          if (!created) {
+            throw new Error(`Impossible de créer automatiquement le compte de démonstration "${primerica_id}". Veuillez demander à un administrateur de créer les comptes de démonstration via le panneau d'administration.`)
+          }
+
+          // Récupérer les données de l'utilisateur nouvellement créé
+          const { data: newUserData, error: newUserError } = await supabase
+            .from('users')
+            .select('email, is_active')
+            .eq('primerica_id', primerica_id)
+            .single()
+
+          if (newUserError || !newUserData) {
+            throw new Error('Erreur lors de la récupération du compte nouvellement créé')
+          }
+
+          // Utiliser les nouvelles données
+          userData = newUserData;
         }
 
         if (!userData.is_active) {
