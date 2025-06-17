@@ -344,76 +344,6 @@ export class SupabaseAPI {
     return DEMO_USERS.find(user => user.primerica_id === primerica_id);
   }
 
-  // Fonction pour créer automatiquement un utilisateur de démonstration s'il n'existe pas
-  private static async createDemoUserIfNotExists(demoUserData: typeof DEMO_USERS[0]): Promise<boolean> {
-    try {
-      console.log(`🎭 Tentative de création automatique de l'utilisateur: ${demoUserData.primerica_id}`);
-
-      // Vérifier si l'utilisateur existe déjà
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('primerica_id')
-        .eq('primerica_id', demoUserData.primerica_id)
-        .maybeSingle();
-
-      if (existingUser) {
-        console.log(`Utilisateur ${demoUserData.primerica_id} existe déjà`);
-        return true;
-      }
-
-      // Créer l'utilisateur dans Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: demoUserData.email,
-        password: demoUserData.password,
-        email_confirm: true,
-        user_metadata: {
-          primerica_id: demoUserData.primerica_id,
-          first_name: demoUserData.first_name,
-          last_name: demoUserData.last_name,
-          initial_role: demoUserData.initial_role,
-          is_demo_user: true
-        }
-      });
-
-      if (authError) {
-        console.error(`Erreur création auth pour ${demoUserData.primerica_id}:`, authError);
-        return false;
-      }
-
-      // Créer le profil utilisateur
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert({
-          id: authData.user.id,
-          primerica_id: demoUserData.primerica_id,
-          email: demoUserData.email,
-          first_name: demoUserData.first_name,
-          last_name: demoUserData.last_name,
-          initial_role: demoUserData.initial_role,
-          current_xp: demoUserData.current_xp,
-          current_level: demoUserData.current_level,
-          gamified_role: demoUserData.gamified_role,
-          is_admin: demoUserData.is_admin,
-          is_supreme_admin: demoUserData.is_supreme_admin,
-          is_active: true
-        });
-
-      if (profileError) {
-        console.error(`Erreur création profil pour ${demoUserData.primerica_id}:`, profileError);
-        // Nettoyer l'utilisateur auth si la création du profil échoue
-        await supabase.auth.admin.deleteUser(authData.user.id);
-        return false;
-      }
-
-      console.log(`✅ Utilisateur ${demoUserData.primerica_id} créé automatiquement avec succès`);
-      return true;
-
-    } catch (error) {
-      console.error(`Erreur lors de la création automatique de ${demoUserData.primerica_id}:`, error);
-      return false;
-    }
-  }
-
   // Auth API - Utilise directement Supabase Auth
   static async register(data: {
     email: string
@@ -539,29 +469,9 @@ export class SupabaseAPI {
           throw new Error('Erreur lors de la vérification du compte')
         }
 
-        // Si l'utilisateur n'existe pas dans la base de données, essayer de le créer automatiquement
+        // Si l'utilisateur n'existe pas dans la base de données, informer qu'il doit être créé par un admin
         if (!userData) {
-          console.log(`🎭 Utilisateur de démonstration ${primerica_id} non trouvé, tentative de création automatique...`);
-          
-          const created = await this.createDemoUserIfNotExists(demoUserData);
-          
-          if (!created) {
-            throw new Error(`Impossible de créer automatiquement le compte de démonstration "${primerica_id}". Veuillez demander à un administrateur de créer les comptes de démonstration via le panneau d'administration.`)
-          }
-
-          // Récupérer les données de l'utilisateur nouvellement créé
-          const { data: newUserData, error: newUserError } = await supabase
-            .from('users')
-            .select('email, is_active')
-            .eq('primerica_id', primerica_id)
-            .single()
-
-          if (newUserError || !newUserData) {
-            throw new Error('Erreur lors de la récupération du compte nouvellement créé')
-          }
-
-          // Utiliser les nouvelles données
-          userData = newUserData;
+          throw new Error(`Le compte de démonstration "${primerica_id}" n'existe pas encore. Veuillez demander à un administrateur de créer les comptes de démonstration via le panneau d'administration.`)
         }
 
         if (!userData.is_active) {
@@ -774,7 +684,7 @@ export class SupabaseAPI {
     }
   }
 
-  // Fonction pour créer les utilisateurs de démonstration
+  // Fonction pour créer les utilisateurs de démonstration via Edge Function
   static async createDemoUsers() {
     console.log('🎭 Création des utilisateurs de démonstration...');
     
@@ -788,95 +698,18 @@ export class SupabaseAPI {
     }
 
     try {
-      const createdUsers = [];
-      const errors = [];
+      // Utiliser l'Edge Function pour créer les utilisateurs de démonstration
+      const apiUrl = `${supabaseUrl}/functions/v1/admin-api`;
+      
+      const response = await this.makeRequest(`${apiUrl}/create-demo-users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ users: DEMO_USERS })
+      });
 
-      for (const demoUser of DEMO_USERS) {
-        try {
-          console.log(`Création de l'utilisateur: ${demoUser.primerica_id}`);
-
-          // Vérifier si l'utilisateur existe déjà
-          const { data: existingUser } = await supabase
-            .from('users')
-            .select('primerica_id')
-            .eq('primerica_id', demoUser.primerica_id)
-            .maybeSingle();
-
-          if (existingUser) {
-            console.log(`Utilisateur ${demoUser.primerica_id} existe déjà, ignoré`);
-            continue;
-          }
-
-          // Créer l'utilisateur dans Supabase Auth
-          const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-            email: demoUser.email,
-            password: demoUser.password,
-            email_confirm: true,
-            user_metadata: {
-              primerica_id: demoUser.primerica_id,
-              first_name: demoUser.first_name,
-              last_name: demoUser.last_name,
-              initial_role: demoUser.initial_role,
-              is_demo_user: true
-            }
-          });
-
-          if (authError) {
-            console.error(`Erreur création auth pour ${demoUser.primerica_id}:`, authError);
-            errors.push(`${demoUser.primerica_id}: ${authError.message}`);
-            continue;
-          }
-
-          // Créer le profil utilisateur
-          const { error: profileError } = await supabase
-            .from('users')
-            .insert({
-              id: authData.user.id,
-              primerica_id: demoUser.primerica_id,
-              email: demoUser.email,
-              first_name: demoUser.first_name,
-              last_name: demoUser.last_name,
-              initial_role: demoUser.initial_role,
-              current_xp: demoUser.current_xp,
-              current_level: demoUser.current_level,
-              gamified_role: demoUser.gamified_role,
-              is_admin: demoUser.is_admin,
-              is_supreme_admin: demoUser.is_supreme_admin,
-              is_active: true
-            });
-
-          if (profileError) {
-            console.error(`Erreur création profil pour ${demoUser.primerica_id}:`, profileError);
-            errors.push(`${demoUser.primerica_id}: Erreur profil - ${profileError.message}`);
-            continue;
-          }
-
-          createdUsers.push({
-            primerica_id: demoUser.primerica_id,
-            email: demoUser.email,
-            name: `${demoUser.first_name} ${demoUser.last_name}`
-          });
-
-          console.log(`✅ Utilisateur ${demoUser.primerica_id} créé avec succès`);
-
-        } catch (userError) {
-          console.error(`Erreur pour ${demoUser.primerica_id}:`, userError);
-          errors.push(`${demoUser.primerica_id}: ${userError instanceof Error ? userError.message : 'Erreur inconnue'}`);
-        }
-      }
-
-      const message = createdUsers.length > 0 
-        ? `${createdUsers.length} utilisateur(s) de démonstration créé(s) avec succès`
-        : 'Aucun nouvel utilisateur de démonstration créé';
-
-      const result = {
-        success: true,
-        message: errors.length > 0 ? `${message}. Erreurs: ${errors.join(', ')}` : message,
-        created: createdUsers,
-        errors: errors.length > 0 ? errors : undefined
-      };
-
-      return result;
+      return response;
 
     } catch (error) {
       console.error('Erreur lors de la création des utilisateurs de démonstration:', error);
