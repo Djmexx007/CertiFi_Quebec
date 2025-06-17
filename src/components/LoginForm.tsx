@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Card } from './ui/Card';
@@ -33,7 +33,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Partial<LoginCredentials>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [autoCreateAttempted, setAutoCreateAttempted] = useState(false);
 
   // Nettoyer l'erreur quand l'utilisateur commence à taper
   useEffect(() => {
@@ -69,17 +68,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     if (!validateForm() || disabled || isSubmitting) return;
     
     setIsSubmitting(true);
-    setAutoCreateAttempted(false);
     
     try {
       await onLogin(credentials);
     } catch (error) {
       console.error('Erreur de connexion:', error);
-      
-      // Marquer qu'une tentative de création automatique a été faite
-      if (error instanceof Error && error.message.includes('créé automatiquement')) {
-        setAutoCreateAttempted(true);
-      }
     } finally {
       setIsSubmitting(false);
     }
@@ -97,18 +90,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     if (error && onClearError) {
       onClearError();
     }
-    
-    // Reset auto-create flag when user changes input
-    if (autoCreateAttempted) {
-      setAutoCreateAttempted(false);
-    }
   };
 
   const isFormDisabled = loading || disabled || isSubmitting;
-
-  // Vérifier si l'erreur indique que les comptes de démonstration n'existent pas
-  const isDemoAccountError = error && error.includes('Compte de démonstration') && error.includes('non trouvé');
-  const isAutoCreateSuccess = error && error.includes('créé automatiquement');
 
   return (
     <Card className="w-full max-w-md mx-auto">
@@ -122,40 +106,15 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
       {/* Affichage des erreurs globales */}
       {error && (
-        <div className={`mb-4 p-3 border rounded-lg ${
-          isAutoCreateSuccess ? 'bg-green-50 border-green-200' :
-          isDemoAccountError ? 'bg-orange-50 border-orange-200' : 
-          'bg-red-50 border-red-200'
-        }`}>
+        <div className="mb-4 p-3 border rounded-lg bg-red-50 border-red-200">
           <div className="flex items-start space-x-2">
-            {isAutoCreateSuccess ? (
-              <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-            ) : (
-              <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
-                isDemoAccountError ? 'text-orange-600' : 'text-red-600'
-              }`} />
-            )}
+            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <p className={`text-sm ${
-                isAutoCreateSuccess ? 'text-green-800' :
-                isDemoAccountError ? 'text-orange-800' : 
-                'text-red-800'
-              }`}>
-                {error}
-              </p>
-              {isAutoCreateSuccess && (
-                <p className="text-xs text-green-700 mt-1">
-                  Vous pouvez maintenant vous connecter avec ce compte.
-                </p>
-              )}
+              <p className="text-sm text-red-800">{error}</p>
               {onClearError && (
                 <button
                   onClick={onClearError}
-                  className={`text-xs underline mt-1 ${
-                    isAutoCreateSuccess ? 'text-green-600 hover:text-green-800' :
-                    isDemoAccountError ? 'text-orange-600 hover:text-orange-800' : 
-                    'text-red-600 hover:text-red-800'
-                  }`}
+                  className="text-xs text-red-600 hover:text-red-800 underline mt-1"
                 >
                   Fermer
                 </button>
@@ -185,7 +144,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           value={credentials.primerica_id}
           onChange={(e) => handleInputChange('primerica_id', e.target.value)}
           error={errors.primerica_id}
-          placeholder="SUPREMEADMIN001"
+          placeholder="Votre numéro de représentant"
           disabled={isFormDisabled}
           autoComplete="username"
         />
