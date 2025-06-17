@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Power, PowerOff, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Users, Power, PowerOff, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { SupabaseAPI, User } from '../../lib/supabase';
@@ -11,7 +11,7 @@ interface DemoUserManagerProps {
 export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [lastAction, setLastAction] = useState<{
-    type: 'activate' | 'deactivate';
+    type: 'activate' | 'deactivate' | 'create';
     success: boolean;
     message: string;
     count?: number;
@@ -33,6 +33,32 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
       </Card>
     );
   }
+
+  const handleCreateDemoUsers = async () => {
+    setIsLoading(true);
+    setLastAction(null);
+
+    try {
+      const result = await SupabaseAPI.createDemoUsers();
+      
+      setLastAction({
+        type: 'create',
+        success: true,
+        message: result.message,
+        count: result.created?.length || 0
+      });
+    } catch (error) {
+      console.error('Erreur lors de la création des utilisateurs de démonstration:', error);
+      
+      setLastAction({
+        type: 'create',
+        success: false,
+        message: error instanceof Error ? error.message : 'Erreur inconnue'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleToggleDemoUsers = async (activate: boolean) => {
     setIsLoading(true);
@@ -73,11 +99,27 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
               Gestion des Utilisateurs de Démonstration
             </h2>
             <p className="text-sm text-gray-600">
-              Activer ou désactiver en masse tous les comptes de démonstration
+              Créer, activer ou désactiver en masse tous les comptes de démonstration
             </p>
           </div>
         </div>
       </Card>
+
+      {/* Mode démo détecté */}
+      {(import.meta.env.VITE_MOCK_API === 'true' || !import.meta.env.VITE_SUPABASE_URL) && (
+        <Card className="bg-blue-50 border-blue-200">
+          <div className="flex items-start space-x-3">
+            <Info className="w-6 h-6 text-blue-600 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-blue-900">Mode Démonstration Détecté</h4>
+              <p className="text-sm text-blue-800 mt-1">
+                L'application fonctionne en mode démonstration avec des données simulées. 
+                Les opérations sur les utilisateurs seront simulées.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Informations sur les utilisateurs de démonstration */}
       <Card>
@@ -88,14 +130,14 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
-              { id: 'SUPREMEADMIN001', name: 'Admin Suprême', role: 'Administrateur Suprême' },
-              { id: 'REGULARADMIN001', name: 'Admin Régulier', role: 'Administrateur' },
-              { id: 'PQAPUSER001', name: 'Jean Dupont', role: 'Conseiller PQAP' },
-              { id: 'FONDSUSER001', name: 'Marie Tremblay', role: 'Expert Fonds Mutuels' },
-              { id: 'BOTHUSER001', name: 'Pierre Bouchard', role: 'Conseiller Expert' }
+              { id: 'SUPREMEADMIN001', name: 'Admin Suprême', role: 'Administrateur Suprême', email: 'supreme.admin@certifi.quebec' },
+              { id: 'REGULARADMIN001', name: 'Admin Régulier', role: 'Administrateur', email: 'admin@certifi.quebec' },
+              { id: 'PQAPUSER001', name: 'Jean Dupont', role: 'Conseiller PQAP', email: 'pqap.user@certifi.quebec' },
+              { id: 'FONDSUSER001', name: 'Marie Tremblay', role: 'Expert Fonds Mutuels', email: 'fonds.user@certifi.quebec' },
+              { id: 'BOTHUSER001', name: 'Pierre Bouchard', role: 'Conseiller Expert', email: 'both.user@certifi.quebec' }
             ].map((demoUser) => (
-              <div key={demoUser.id} className="bg-gray-50 p-3 rounded-lg">
-                <div className="flex items-center justify-between">
+              <div key={demoUser.id} className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="font-medium text-gray-900">{demoUser.name}</p>
                     <p className="text-sm text-gray-600">{demoUser.id}</p>
@@ -104,6 +146,8 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
                     {demoUser.role}
                   </span>
                 </div>
+                <p className="text-xs text-gray-500">{demoUser.email}</p>
+                <p className="text-xs text-gray-500 mt-1">Mot de passe: password123</p>
               </div>
             ))}
           </div>
@@ -115,7 +159,17 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-gray-900">Actions de Gestion</h3>
           
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Button
+              onClick={handleCreateDemoUsers}
+              loading={isLoading}
+              disabled={isLoading}
+              icon={Users}
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+            >
+              Créer les comptes démo
+            </Button>
+            
             <Button
               onClick={() => handleToggleDemoUsers(true)}
               loading={isLoading}
@@ -123,7 +177,7 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
               icon={Power}
               className="flex-1 bg-green-600 hover:bg-green-700"
             >
-              Activer tous les comptes démo
+              Activer tous les comptes
             </Button>
             
             <Button
@@ -134,15 +188,16 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
               variant="secondary"
               className="flex-1 bg-red-600 hover:bg-red-700 text-white"
             >
-              Désactiver tous les comptes démo
+              Désactiver tous les comptes
             </Button>
           </div>
 
-          <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
-            <p className="font-medium text-blue-900 mb-1">ℹ️ Information importante :</p>
+          <div className="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg">
+            <p className="font-medium text-blue-900 mb-2">ℹ️ Information importante :</p>
             <ul className="space-y-1 text-blue-800">
-              <li>• L'activation permet aux utilisateurs de démonstration de se connecter</li>
-              <li>• La désactivation bloque temporairement l'accès sans supprimer les comptes</li>
+              <li>• <strong>Créer :</strong> Crée les utilisateurs de démonstration dans Supabase Auth et la base de données</li>
+              <li>• <strong>Activer :</strong> Permet aux utilisateurs de démonstration de se connecter</li>
+              <li>• <strong>Désactiver :</strong> Bloque temporairement l'accès sans supprimer les comptes</li>
               <li>• Cette action affecte tous les utilisateurs marqués comme "démonstration"</li>
               <li>• Les utilisateurs réels ne sont pas affectés par cette opération</li>
             </ul>
@@ -168,7 +223,10 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
               </p>
               {lastAction.success && lastAction.count !== undefined && (
                 <p className="text-xs text-green-700 mt-1">
-                  {lastAction.count} utilisateur(s) de démonstration {lastAction.type === 'activate' ? 'activé(s)' : 'désactivé(s)'}
+                  {lastAction.type === 'create' 
+                    ? `${lastAction.count} utilisateur(s) de démonstration traité(s)`
+                    : `${lastAction.count} utilisateur(s) de démonstration ${lastAction.type === 'activate' ? 'activé(s)' : 'désactivé(s)'}`
+                  }
                 </p>
               )}
             </div>
@@ -187,6 +245,10 @@ export const DemoUserManager: React.FC<DemoUserManagerProps> = ({ user }) => {
               que dans des environnements de test ou de démonstration. En production, assurez-vous qu'ils sont 
               désactivés pour maintenir la sécurité du système.
             </p>
+            <div className="mt-2 text-xs text-orange-700">
+              <p><strong>Mots de passe par défaut :</strong> password123</p>
+              <p><strong>Métadonnée d'identification :</strong> is_demo_user: true</p>
+            </div>
           </div>
         </div>
       </Card>

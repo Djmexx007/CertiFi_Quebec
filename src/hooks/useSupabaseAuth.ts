@@ -46,12 +46,24 @@ export const useSupabaseAuth = () => {
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isInitializedRef = useRef(false)
 
+  // Fonction pour vérifier si on est en mode démo
+  const isDemoMode = (): boolean => {
+    return import.meta.env.VITE_MOCK_API === 'true' || 
+           !import.meta.env.VITE_SUPABASE_URL || 
+           !import.meta.env.VITE_SUPABASE_ANON_KEY
+  }
+
   // Fonction pour vérifier la connectivité réseau
   const checkNetworkConnectivity = async (): Promise<boolean> => {
     try {
       // Test de connectivité basique
       if (!navigator.onLine) {
         return false
+      }
+
+      // En mode démo, toujours connecté
+      if (isDemoMode()) {
+        return true
       }
 
       // Test de connectivité Supabase avec timeout
@@ -111,7 +123,7 @@ export const useSupabaseAuth = () => {
   }
 
   // Charger le profil utilisateur complet avec gestion d'erreur
-  const loadUserProfile = async (session: Session, retryAttempt = 0): Promise<boolean> => {
+  const loadUserProfile = async (session: Session | any, retryAttempt = 0): Promise<boolean> => {
     try {
       setAuthTimeout(() => {
         console.error('Profile loading timeout')
@@ -148,7 +160,7 @@ export const useSupabaseAuth = () => {
     // Vérifier la connectivité
     const isConnected = await updateConnectionStatus()
     
-    if (!isConnected) {
+    if (!isConnected && !isDemoMode()) {
       setError('Problème de connexion réseau. Vérifiez votre connexion internet.')
       setAuthState(prev => ({
         ...prev,
@@ -169,12 +181,22 @@ export const useSupabaseAuth = () => {
       return new Promise((resolve) => {
         retryTimeoutRef.current = setTimeout(async () => {
           try {
-            const { data: { session }, error } = await supabase.auth.getSession()
-            if (session && !error) {
-              const success = await loadUserProfile(session, retryAttempt + 1)
+            if (isDemoMode()) {
+              // En mode démo, simuler une session
+              const demoSession = {
+                access_token: 'demo-token',
+                user: { id: 'demo-user', email: 'demo@example.com' }
+              }
+              const success = await loadUserProfile(demoSession, retryAttempt + 1)
               resolve(success)
             } else {
-              resolve(await handleAuthError(errorMessage, retryAttempt + 1))
+              const { data: { session }, error } = await supabase.auth.getSession()
+              if (session && !error) {
+                const success = await loadUserProfile(session, retryAttempt + 1)
+                resolve(success)
+              } else {
+                resolve(await handleAuthError(errorMessage, retryAttempt + 1))
+              }
             }
           } catch (err) {
             resolve(await handleAuthError(errorMessage, retryAttempt + 1))
@@ -207,7 +229,7 @@ export const useSupabaseAuth = () => {
     }))
 
     const isConnected = await updateConnectionStatus()
-    if (!isConnected) {
+    if (!isConnected && !isDemoMode()) {
       setError('Impossible de se connecter au serveur')
       setAuthState(prev => ({
         ...prev,
@@ -218,17 +240,26 @@ export const useSupabaseAuth = () => {
     }
 
     try {
-      const { data: { session }, error } = await supabase.auth.getSession()
-      if (error) throw error
-
-      if (session) {
-        await loadUserProfile(session)
+      if (isDemoMode()) {
+        // En mode démo, simuler une session
+        const demoSession = {
+          access_token: 'demo-token',
+          user: { id: 'demo-user', email: 'demo@example.com' }
+        }
+        await loadUserProfile(demoSession)
       } else {
-        setAuthState(prev => ({
-          ...prev,
-          isLoading: false,
-          connectionStatus: 'connected'
-        }))
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) throw error
+
+        if (session) {
+          await loadUserProfile(session)
+        } else {
+          setAuthState(prev => ({
+            ...prev,
+            isLoading: false,
+            connectionStatus: 'connected'
+          }))
+        }
       }
     } catch (err) {
       await handleAuthError('Erreur lors de la reconnexion')
@@ -245,12 +276,22 @@ export const useSupabaseAuth = () => {
       try {
         // Vérifier la connectivité d'abord
         const isConnected = await updateConnectionStatus()
-        if (!isConnected) {
+        if (!isConnected && !isDemoMode()) {
           setError('Aucune connexion réseau détectée')
           setAuthState(prev => ({
             ...prev,
             isLoading: false,
             connectionStatus: 'disconnected'
+          }))
+          return
+        }
+
+        if (isDemoMode()) {
+          console.log('🎭 Mode démo activé - pas de session Supabase requise')
+          setAuthState(prev => ({
+            ...prev,
+            isLoading: false,
+            connectionStatus: 'connected'
           }))
           return
         }
@@ -288,38 +329,43 @@ export const useSupabaseAuth = () => {
 
     getInitialSession()
 
-    // Écouter les changements d'authentification avec gestion d'erreur
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.id)
-        
-        try {
-          if (event === 'SIGNED_IN' && session) {
-            await loadUserProfile(session)
-          } else if (event === 'SIGNED_OUT') {
-            clearTimeouts()
-            setAuthState({
-              user: null,
-              session: null,
-              isLoading: false,
-              isAuthenticated: false,
-              connectionStatus: 'connected',
-              retryCount: 0
-            })
-            setError(null)
-          } else if (event === 'TOKEN_REFRESHED' && session) {
-            setAuthState(prev => ({
-              ...prev,
-              session,
-              connectionStatus: 'connected'
-            }))
+    // Écouter les changements d'authentification avec gestion d'erreur (seulement si pas en mode démo)
+    let subscription: any = null
+    
+    if (!isDemoMode()) {
+      const { data } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('Auth state changed:', event, session?.user?.id)
+          
+          try {
+            if (event === 'SIGNED_IN' && session) {
+              await loadUserProfile(session)
+            } else if (event === 'SIGNED_OUT') {
+              clearTimeouts()
+              setAuthState({
+                user: null,
+                session: null,
+                isLoading: false,
+                isAuthenticated: false,
+                connectionStatus: 'connected',
+                retryCount: 0
+              })
+              setError(null)
+            } else if (event === 'TOKEN_REFRESHED' && session) {
+              setAuthState(prev => ({
+                ...prev,
+                session,
+                connectionStatus: 'connected'
+              }))
+            }
+          } catch (err) {
+            console.error('Error in auth state change handler:', err)
+            await handleAuthError('Erreur lors du changement d\'état d\'authentification')
           }
-        } catch (err) {
-          console.error('Error in auth state change handler:', err)
-          await handleAuthError('Erreur lors du changement d\'état d\'authentification')
         }
-      }
-    )
+      )
+      subscription = data
+    }
 
     // Écouter les changements de connectivité réseau
     const handleOnline = () => {
@@ -331,18 +377,22 @@ export const useSupabaseAuth = () => {
 
     const handleOffline = () => {
       console.log('Network went offline')
-      setAuthState(prev => ({
-        ...prev,
-        connectionStatus: 'disconnected'
-      }))
-      setError('Connexion réseau perdue')
+      if (!isDemoMode()) {
+        setAuthState(prev => ({
+          ...prev,
+          connectionStatus: 'disconnected'
+        }))
+        setError('Connexion réseau perdue')
+      }
     }
 
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
 
     return () => {
-      subscription.unsubscribe()
+      if (subscription) {
+        subscription.unsubscribe()
+      }
       clearTimeouts()
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
@@ -356,7 +406,7 @@ export const useSupabaseAuth = () => {
     try {
       // Vérifier la connectivité
       const isConnected = await updateConnectionStatus()
-      if (!isConnected) {
+      if (!isConnected && !isDemoMode()) {
         throw new Error('Aucune connexion réseau disponible')
       }
 
@@ -373,7 +423,12 @@ export const useSupabaseAuth = () => {
         throw new Error(result.error)
       }
 
-      // La session sera automatiquement gérée par onAuthStateChange
+      // En mode démo ou si on a une session simulée, charger le profil directement
+      if (isDemoMode() || result.session?.access_token?.includes('demo')) {
+        await loadUserProfile(result.session)
+      }
+      // Sinon, la session sera automatiquement gérée par onAuthStateChange
+
       return result
     } catch (err) {
       clearTimeouts()
@@ -390,7 +445,7 @@ export const useSupabaseAuth = () => {
 
     try {
       const isConnected = await updateConnectionStatus()
-      if (!isConnected) {
+      if (!isConnected && !isDemoMode()) {
         throw new Error('Aucune connexion réseau disponible')
       }
 
@@ -422,10 +477,22 @@ export const useSupabaseAuth = () => {
     
     try {
       clearTimeouts()
-      const { error } = await supabase.auth.signOut()
-      if (error) throw error
       
-      // L'état sera automatiquement mis à jour par onAuthStateChange
+      if (!isDemoMode()) {
+        const { error } = await supabase.auth.signOut()
+        if (error) throw error
+      }
+      
+      // Réinitialiser l'état manuellement
+      setAuthState({
+        user: null,
+        session: null,
+        isLoading: false,
+        isAuthenticated: false,
+        connectionStatus: 'connected',
+        retryCount: 0
+      })
+      
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur lors de la déconnexion'
       setError(errorMessage)
@@ -438,7 +505,7 @@ export const useSupabaseAuth = () => {
     
     try {
       const isConnected = await updateConnectionStatus()
-      if (!isConnected) {
+      if (!isConnected && !isDemoMode()) {
         throw new Error('Aucune connexion réseau disponible')
       }
 
@@ -460,13 +527,13 @@ export const useSupabaseAuth = () => {
     setError(null)
     
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      })
+      const result = await SupabaseAPI.updatePassword(newPassword)
       
-      if (error) throw error
+      if (result.error) {
+        throw new Error(result.error)
+      }
       
-      return { message: 'Mot de passe mis à jour avec succès' }
+      return result
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur lors de la mise à jour du mot de passe'
       setError(errorMessage)
