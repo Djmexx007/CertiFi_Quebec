@@ -361,9 +361,14 @@ export class SupabaseAPI {
         .from('users')
         .select('email, is_active')
         .eq('primerica_id', primerica_id)
-        .single()
+        .maybeSingle()
 
-      if (userError || !userData) {
+      if (userError) {
+        console.error('❌ User lookup error:', userError);
+        throw new Error('Erreur lors de la recherche de l\'utilisateur')
+      }
+
+      if (!userData) {
         throw new Error('Numéro de représentant introuvable')
       }
 
