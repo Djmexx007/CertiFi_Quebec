@@ -53,15 +53,19 @@ serve(async (req) => {
 
     // Fonction utilitaire pour logger les actions admin
     const logAdminAction = async (action: string, target_entity?: string, target_id?: string, details?: any) => {
-      await supabase.rpc('log_admin_action', {
-        admin_id: user.id,
-        action_type_param: action,
-        target_entity_param: target_entity,
-        target_id_param: target_id,
-        details_param: details || {},
-        ip_address_param: req.headers.get('x-forwarded-for'),
-        user_agent_param: req.headers.get('user-agent')
-      })
+      try {
+        await supabase.rpc('log_admin_action', {
+          admin_id: user.id,
+          action_type_param: action,
+          target_entity_param: target_entity,
+          target_id_param: target_id,
+          details_param: details || {},
+          ip_address_param: req.headers.get('x-forwarded-for'),
+          user_agent_param: req.headers.get('user-agent')
+        })
+      } catch (logError) {
+        console.warn('Failed to log admin action:', logError)
+      }
     }
 
     switch (req.method) {
@@ -198,7 +202,14 @@ serve(async (req) => {
             }
 
             // Obtenir les statistiques de l'utilisateur
-            const { data: userStats } = await supabase.rpc('get_user_stats', { user_uuid: resourceId })
+            let userStats = null
+            try {
+              const { data } = await supabase.rpc('get_user_stats', { user_uuid: resourceId })
+              userStats = data
+            } catch (statsError) {
+              console.warn('Stats function not available:', statsError)
+              userStats = {}
+            }
 
             // Obtenir les activités récentes
             const { data: recentActivities } = await supabase
@@ -325,6 +336,16 @@ serve(async (req) => {
             )
           }
 
+          default:
+            return new Response(
+              JSON.stringify({ error: 'Endpoint non trouvé' }),
+              { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+        }
+      }
+
+      case 'POST': {
+        switch (endpoint) {
           case 'create-demo-users': {
             // Créer les utilisateurs de démonstration
             const demoUsers = [
@@ -335,7 +356,10 @@ serve(async (req) => {
                 last_name: 'Suprême',
                 initial_role: 'LES_DEUX',
                 is_admin: true,
-                is_supreme_admin: true
+                is_supreme_admin: true,
+                current_xp: 5000,
+                current_level: 8,
+                gamified_role: 'Maître Administrateur'
               },
               {
                 primerica_id: 'REGULARADMIN001',
@@ -344,28 +368,40 @@ serve(async (req) => {
                 last_name: 'Régulier',
                 initial_role: 'LES_DEUX',
                 is_admin: true,
-                is_supreme_admin: false
+                is_supreme_admin: false,
+                current_xp: 3500,
+                current_level: 6,
+                gamified_role: 'Conseiller Expert'
               },
               {
                 primerica_id: 'PQAPUSER001',
                 email: 'pqap.user@certifi.quebec',
                 first_name: 'Jean',
                 last_name: 'Dupont',
-                initial_role: 'PQAP'
+                initial_role: 'PQAP',
+                current_xp: 2750,
+                current_level: 4,
+                gamified_role: 'Conseiller Débutant'
               },
               {
                 primerica_id: 'FONDSUSER001',
                 email: 'fonds.user@certifi.quebec',
                 first_name: 'Marie',
                 last_name: 'Tremblay',
-                initial_role: 'FONDS_MUTUELS'
+                initial_role: 'FONDS_MUTUELS',
+                current_xp: 4200,
+                current_level: 7,
+                gamified_role: 'Conseiller Expert'
               },
               {
                 primerica_id: 'BOTHUSER001',
                 email: 'both.user@certifi.quebec',
                 first_name: 'Pierre',
                 last_name: 'Bouchard',
-                initial_role: 'LES_DEUX'
+                initial_role: 'LES_DEUX',
+                current_xp: 6800,
+                current_level: 9,
+                gamified_role: 'Conseiller Maître'
               }
             ]
 
@@ -374,6 +410,18 @@ serve(async (req) => {
 
             for (const demoUser of demoUsers) {
               try {
+                // Vérifier si l'utilisateur existe déjà
+                const { data: existingUser } = await supabase
+                  .from('users')
+                  .select('id')
+                  .eq('primerica_id', demoUser.primerica_id)
+                  .single()
+
+                if (existingUser) {
+                  console.log(`User ${demoUser.primerica_id} already exists, skipping...`)
+                  continue
+                }
+
                 // Créer l'utilisateur avec Supabase Auth
                 const { data: authData, error: authError } = await supabase.auth.admin.createUser({
                   email: demoUser.email,
@@ -389,42 +437,73 @@ serve(async (req) => {
                 })
 
                 if (authError) {
+                  console.error(`Auth error for ${demoUser.primerica_id}:`, authError)
                   errors.push(`${demoUser.primerica_id}: ${authError.message}`)
                   continue
                 }
 
-                // Créer le profil utilisateur
-                const { error: profileError } = await supabase.rpc(
-                  'create_user_with_permissions',
-                  {
-                    user_id: authData.user.id,
-                    primerica_id_param: demoUser.primerica_id,
-                    email_param: demoUser.email,
-                    first_name_param: demoUser.first_name,
-                    last_name_param: demoUser.last_name,
-                    initial_role_param: demoUser.initial_role
-                  }
-                )
+                // Créer le profil utilisateur directement dans la table users
+                const { error: profileError } = await supabase
+                  .from('users')
+                  .insert({
+                    id: authData.user.id,
+                    primerica_id: demoUser.primerica_id,
+                    email: demoUser.email,
+                    first_name: demoUser.first_name,
+                    last_name: demoUser.last_name,
+                    initial_role: demoUser.initial_role,
+                    current_xp: demoUser.current_xp || 0,
+                    current_level: demoUser.current_level || 1,
+                    gamified_role: demoUser.gamified_role || 'Apprenti Conseiller',
+                    is_admin: demoUser.is_admin || false,
+                    is_supreme_admin: demoUser.is_supreme_admin || false,
+                    is_active: true
+                  })
 
                 if (profileError) {
+                  console.error(`Profile error for ${demoUser.primerica_id}:`, profileError)
+                  // Nettoyer l'utilisateur auth si la création du profil échoue
                   await supabase.auth.admin.deleteUser(authData.user.id)
                   errors.push(`${demoUser.primerica_id}: ${profileError.message}`)
                   continue
                 }
 
-                // Mettre à jour les flags admin si nécessaire
-                if (demoUser.is_admin || demoUser.is_supreme_admin) {
-                  await supabase
-                    .from('users')
-                    .update({
-                      is_admin: demoUser.is_admin || false,
-                      is_supreme_admin: demoUser.is_supreme_admin || false
-                    })
-                    .eq('id', authData.user.id)
+                // Attribuer les permissions de base selon le rôle
+                const permissionsToGrant = []
+                switch (demoUser.initial_role) {
+                  case 'PQAP':
+                    permissionsToGrant.push('pqap')
+                    break
+                  case 'FONDS_MUTUELS':
+                    permissionsToGrant.push('fonds_mutuels')
+                    break
+                  case 'LES_DEUX':
+                    permissionsToGrant.push('pqap', 'fonds_mutuels')
+                    break
                 }
 
+                // Obtenir les IDs des permissions
+                const { data: permissions } = await supabase
+                  .from('permissions')
+                  .select('id, name')
+                  .in('name', permissionsToGrant)
+
+                if (permissions && permissions.length > 0) {
+                  const permissionInserts = permissions.map(perm => ({
+                    user_id: authData.user.id,
+                    permission_id: perm.id,
+                    granted_by: user.id
+                  }))
+
+                  await supabase
+                    .from('user_permissions')
+                    .insert(permissionInserts)
+                }
+
+                console.log(`Successfully created demo user: ${demoUser.primerica_id}`)
                 created++
               } catch (error) {
+                console.error(`Unexpected error for ${demoUser.primerica_id}:`, error)
                 errors.push(`${demoUser.primerica_id}: ${error.message}`)
               }
             }
@@ -433,16 +512,18 @@ serve(async (req) => {
 
             return new Response(
               JSON.stringify({
-                message: `${created} utilisateurs de démonstration créés`,
+                success: true,
+                message: `${created} utilisateurs de démonstration créés avec succès`,
                 created,
-                errors
+                errors: errors.length > 0 ? errors : undefined
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
           }
 
           case 'toggle-demo-users': {
-            const { activate } = await req.json()
+            const body = await req.json()
+            const { activate } = body
             
             // Mettre à jour tous les utilisateurs de démonstration
             const { data: updatedUsers, error } = await supabase
@@ -462,6 +543,7 @@ serve(async (req) => {
 
             return new Response(
               JSON.stringify({
+                success: true,
                 message: `Utilisateurs de démonstration ${activate ? 'activés' : 'désactivés'}`,
                 count: updatedUsers?.length || 0
               }),
@@ -469,19 +551,8 @@ serve(async (req) => {
             )
           }
 
-          default:
-            return new Response(
-              JSON.stringify({ error: 'Endpoint non trouvé' }),
-              { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
-        }
-      }
-
-      case 'POST': {
-        const body = await req.json()
-
-        switch (endpoint) {
           case 'create-content': {
+            const body = await req.json()
             const { type, data } = body
             
             if (!type || !data) {
@@ -529,6 +600,7 @@ serve(async (req) => {
           }
 
           case 'award-xp': {
+            const body = await req.json()
             const { user_id, xp_amount, reason } = body
             
             if (!user_id || !xp_amount) {
@@ -538,21 +610,51 @@ serve(async (req) => {
               )
             }
 
-            const { data: result, error } = await supabase.rpc('award_xp', {
-              user_uuid: user_id,
-              xp_amount: parseInt(xp_amount),
-              activity_type_param: 'admin_award',
-              activity_details: {
-                reason: reason || 'Attribution manuelle par administrateur',
-                admin_id: user.id
-              }
-            })
+            let result = null
+            try {
+              const { data, error } = await supabase.rpc('award_xp', {
+                user_uuid: user_id,
+                xp_amount: parseInt(xp_amount),
+                activity_type_param: 'admin_award',
+                activity_details: {
+                  reason: reason || 'Attribution manuelle par administrateur',
+                  admin_id: user.id
+                }
+              })
+              
+              if (error) throw error
+              result = data
+            } catch (rpcError) {
+              console.warn('RPC function not available, using direct update:', rpcError)
+              
+              // Fallback: mise à jour directe
+              const { data: userData, error: fetchError } = await supabase
+                .from('users')
+                .select('current_xp, current_level')
+                .eq('id', user_id)
+                .single()
 
-            if (error) {
-              return new Response(
-                JSON.stringify({ error: error.message }),
-                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-              )
+              if (fetchError) {
+                return new Response(
+                  JSON.stringify({ error: fetchError.message }),
+                  { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+              }
+
+              const newXp = userData.current_xp + parseInt(xp_amount)
+              const { error: updateError } = await supabase
+                .from('users')
+                .update({ current_xp: newXp })
+                .eq('id', user_id)
+
+              if (updateError) {
+                return new Response(
+                  JSON.stringify({ error: updateError.message }),
+                  { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+              }
+
+              result = { xp_awarded: parseInt(xp_amount), new_xp: newXp }
             }
 
             await logAdminAction('award_xp', 'users', user_id, { xp_amount, reason })
@@ -749,7 +851,8 @@ serve(async (req) => {
           }
 
           case 'content': {
-            const { type, id } = await req.json()
+            const body = await req.json()
+            const { type, id } = body
             
             if (!type || !id) {
               return new Response(
