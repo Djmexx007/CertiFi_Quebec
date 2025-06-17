@@ -179,80 +179,6 @@ export interface AdminLog {
   }
 }
 
-// Utilisateurs de démonstration avec métadonnées
-const DEMO_USERS = [
-  {
-    primerica_id: 'SUPREMEADMIN001',
-    email: 'supreme.admin@certifi.quebec',
-    password: 'password123',
-    first_name: 'Admin',
-    last_name: 'Suprême',
-    initial_role: 'LES_DEUX' as const,
-    is_admin: true,
-    is_supreme_admin: true,
-    current_xp: 5000,
-    current_level: 8,
-    gamified_role: 'Maître Administrateur',
-    is_demo_user: true
-  },
-  {
-    primerica_id: 'REGULARADMIN001',
-    email: 'admin@certifi.quebec',
-    password: 'password123',
-    first_name: 'Admin',
-    last_name: 'Régulier',
-    initial_role: 'LES_DEUX' as const,
-    is_admin: true,
-    is_supreme_admin: false,
-    current_xp: 3500,
-    current_level: 6,
-    gamified_role: 'Administrateur Confirmé',
-    is_demo_user: true
-  },
-  {
-    primerica_id: 'PQAPUSER001',
-    email: 'pqap.user@certifi.quebec',
-    password: 'password123',
-    first_name: 'Jean',
-    last_name: 'Dupont',
-    initial_role: 'PQAP' as const,
-    is_admin: false,
-    is_supreme_admin: false,
-    current_xp: 2750,
-    current_level: 4,
-    gamified_role: 'Conseiller PQAP',
-    is_demo_user: true
-  },
-  {
-    primerica_id: 'FONDSUSER001',
-    email: 'fonds.user@certifi.quebec',
-    password: 'password123',
-    first_name: 'Marie',
-    last_name: 'Tremblay',
-    initial_role: 'FONDS_MUTUELS' as const,
-    is_admin: false,
-    is_supreme_admin: false,
-    current_xp: 4200,
-    current_level: 7,
-    gamified_role: 'Expert Fonds Mutuels',
-    is_demo_user: true
-  },
-  {
-    primerica_id: 'BOTHUSER001',
-    email: 'both.user@certifi.quebec',
-    password: 'password123',
-    first_name: 'Pierre',
-    last_name: 'Bouchard',
-    initial_role: 'LES_DEUX' as const,
-    is_admin: false,
-    is_supreme_admin: false,
-    current_xp: 6800,
-    current_level: 9,
-    gamified_role: 'Conseiller Expert',
-    is_demo_user: true
-  }
-];
-
 // API Helpers avec authentification robuste et mode démo
 export class SupabaseAPI {
   private static async makeRequest(url: string, options: RequestInit = {}) {
@@ -317,7 +243,7 @@ export class SupabaseAPI {
     return import.meta.env.VITE_MOCK_API === 'true' || !supabaseUrl || !supabaseAnonKey
   }
 
-  // Fonction pour créer les utilisateurs de démonstration avec métadonnées
+  // Fonction pour créer les utilisateurs de démonstration - délègue au backend
   static async createDemoUsers() {
     console.log('🎭 Création des utilisateurs de démonstration...');
     
@@ -327,107 +253,22 @@ export class SupabaseAPI {
     }
 
     try {
-      const createdUsers = [];
-      
-      for (const demoUser of DEMO_USERS) {
-        console.log(`Création de l'utilisateur: ${demoUser.primerica_id}`);
-        
-        try {
-          // Vérifier si l'utilisateur existe déjà
-          const { data: existingUser } = await supabase
-            .from('users')
-            .select('id, primerica_id')
-            .eq('primerica_id', demoUser.primerica_id)
-            .single()
-
-          if (existingUser) {
-            console.log(`✅ Utilisateur ${demoUser.primerica_id} existe déjà`);
-            createdUsers.push(demoUser.primerica_id);
-            continue;
-          }
-
-          // Créer l'utilisateur dans Supabase Auth avec métadonnées is_demo_user
-          const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-            email: demoUser.email,
-            password: demoUser.password,
-            email_confirm: true,
-            user_metadata: {
-              primerica_id: demoUser.primerica_id,
-              first_name: demoUser.first_name,
-              last_name: demoUser.last_name,
-              initial_role: demoUser.initial_role,
-              is_demo_user: true // Métadonnée cruciale pour l'identification
-            }
-          })
-
-          if (authError) {
-            console.warn(`Utilisateur ${demoUser.primerica_id} - erreur auth:`, authError.message);
-            
-            // Si l'utilisateur existe déjà dans auth, essayer de récupérer son ID
-            if (authError.message.includes('already registered')) {
-              const { data: existingAuthUser } = await supabase.auth.admin.listUsers()
-              const foundUser = existingAuthUser.users.find(u => u.email === demoUser.email)
-              
-              if (foundUser) {
-                console.log(`Utilisateur auth trouvé: ${foundUser.id}`);
-                // Créer le profil avec l'ID existant
-                await this.createUserProfile(foundUser.id, demoUser);
-                createdUsers.push(demoUser.primerica_id);
-              }
-            }
-            continue;
-          }
-
-          if (authData.user) {
-            // Créer le profil utilisateur
-            await this.createUserProfile(authData.user.id, demoUser);
-            createdUsers.push(demoUser.primerica_id);
-            console.log(`✅ Utilisateur ${demoUser.primerica_id} créé avec succès`);
-          }
-        } catch (userError) {
-          console.error(`Erreur lors de la création de ${demoUser.primerica_id}:`, userError);
+      const apiUrl = `${supabaseUrl}/functions/v1/admin-api/create-demo-users`;
+      const result = await this.makeRequest(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`
         }
-      }
+      });
 
-      return {
-        success: true,
-        message: `${createdUsers.length} utilisateurs de démonstration traités`,
-        created: createdUsers
-      };
+      return result;
     } catch (error) {
       console.error('Erreur lors de la création des utilisateurs de démonstration:', error);
       throw error;
     }
   }
 
-  private static async createUserProfile(userId: string, demoUser: any) {
-    const { error: profileError } = await supabase
-      .from('users')
-      .upsert({
-        id: userId,
-        primerica_id: demoUser.primerica_id,
-        email: demoUser.email,
-        first_name: demoUser.first_name,
-        last_name: demoUser.last_name,
-        initial_role: demoUser.initial_role,
-        current_xp: demoUser.current_xp,
-        current_level: demoUser.current_level,
-        gamified_role: demoUser.gamified_role,
-        is_admin: demoUser.is_admin,
-        is_supreme_admin: demoUser.is_supreme_admin,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        last_activity_at: new Date().toISOString()
-      })
-
-    if (profileError) {
-      console.error(`Erreur lors de la création du profil:`, profileError);
-      throw profileError;
-    }
-  }
-
-  // Fonction pour basculer l'état des utilisateurs de démonstration
+  // Fonction pour basculer l'état des utilisateurs de démonstration - délègue au backend
   static async toggleDemoUsers(activate: boolean) {
     console.log(`🔄 ${activate ? 'Activation' : 'Désactivation'} des utilisateurs de démonstration...`);
     
@@ -435,52 +276,28 @@ export class SupabaseAPI {
       return {
         success: true,
         message: `Simulation: utilisateurs de démonstration ${activate ? 'activés' : 'désactivés'}`,
-        count: DEMO_USERS.length
+        count: 5
       };
     }
 
     try {
-      // Récupérer tous les utilisateurs avec is_demo_user = true
-      const { data: demoUsers, error: fetchError } = await supabase.auth.admin.listUsers()
-      
-      if (fetchError) {
-        throw new Error(`Erreur lors de la récupération des utilisateurs: ${fetchError.message}`)
-      }
+      const apiUrl = `${supabaseUrl}/functions/v1/admin-api/toggle-demo-users`;
+      const result = await this.makeRequest(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`
+        },
+        body: JSON.stringify({ activate })
+      });
 
-      const demoUsersList = demoUsers.users.filter(user => 
-        user.user_metadata?.is_demo_user === true
-      )
-
-      console.log(`Trouvé ${demoUsersList.length} utilisateurs de démonstration`);
-
-      // Mettre à jour chaque utilisateur de démonstration
-      for (const user of demoUsersList) {
-        const { error: updateError } = await supabase.auth.admin.updateUserById(
-          user.id,
-          {
-            ban_duration: activate ? 'none' : 'infinity'
-          }
-        )
-
-        if (updateError) {
-          console.error(`Erreur lors de la mise à jour de ${user.email}:`, updateError.message);
-        } else {
-          console.log(`✅ ${user.email} ${activate ? 'activé' : 'désactivé'}`);
-        }
-      }
-
-      return {
-        success: true,
-        message: `${demoUsersList.length} utilisateurs de démonstration ${activate ? 'activés' : 'désactivés'}`,
-        count: demoUsersList.length
-      }
+      return result;
     } catch (error) {
       console.error('Erreur lors de la bascule des utilisateurs de démonstration:', error);
-      throw error
+      throw error;
     }
   }
 
-  // Auth API - Utilise directement Supabase Auth ou mode démo
+  // Auth API - Simplifié pour déléguer au backend
   static async register(data: {
     email: string
     password: string
@@ -509,33 +326,15 @@ export class SupabaseAPI {
         };
       }
 
-      // Utiliser directement Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            primerica_id: data.primerica_id,
-            first_name: data.first_name,
-            last_name: data.last_name,
-            initial_role: data.initial_role,
-            is_demo_user: false // Utilisateur réel
-          }
-        }
-      })
-
-      if (authError) {
-        console.error('❌ Auth registration error:', authError);
-        
-        if (authError.message.includes('already registered')) {
-          throw new Error('Cette adresse email est déjà utilisée')
-        }
-        
-        throw new Error(authError.message)
-      }
+      // Déléguer au backend auth-api
+      const apiUrl = `${supabaseUrl}/functions/v1/auth-api/register`;
+      const result = await this.makeRequest(apiUrl, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
 
       console.log('✅ Registration successful');
-      return { user: authData.user, session: authData.session }
+      return result;
     } catch (error) {
       console.error('❌ Registration failed:', error);
       throw error
@@ -551,151 +350,38 @@ export class SupabaseAPI {
         throw new Error('Numéro de représentant et mot de passe requis')
       }
 
-      // Vérifier si c'est un utilisateur de démonstration
-      const demoUser = DEMO_USERS.find(user => user.primerica_id === primerica_id);
-      
-      if (demoUser) {
-        console.log('🎭 Utilisateur de démonstration détecté');
-        
-        // Vérifier le mot de passe
-        if (password !== demoUser.password) {
-          throw new Error('Mot de passe incorrect')
-        }
-
-        if (this.isDemoMode()) {
-          // Mode démo complet - retourner des données simulées
-          return {
-            message: 'Connexion réussie (mode démo)',
-            session: { 
-              access_token: 'demo-token',
-              user: {
-                id: `demo-${demoUser.primerica_id}`,
-                email: demoUser.email,
-                user_metadata: {
-                  primerica_id: demoUser.primerica_id,
-                  is_demo_user: true
-                }
-              }
-            },
-            user: {
-              id: `demo-${demoUser.primerica_id}`,
-              email: demoUser.email
-            }
-          };
-        }
-
-        // Mode Supabase - essayer de se connecter avec l'email
-        try {
-          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-            email: demoUser.email,
-            password: password
-          })
-
-          if (authError) {
-            console.warn('Utilisateur de démonstration non trouvé dans Auth, création...');
-            
-            // Créer l'utilisateur s'il n'existe pas
-            await this.createDemoUsers();
-            
-            // Réessayer la connexion
-            const { data: retryAuthData, error: retryAuthError } = await supabase.auth.signInWithPassword({
-              email: demoUser.email,
-              password: password
-            })
-
-            if (retryAuthError) {
-              throw new Error('Impossible de créer ou connecter l\'utilisateur de démonstration')
-            }
-
-            console.log('✅ Demo user login successful after creation');
-            return { 
-              message: 'Connexion réussie',
-              session: retryAuthData.session,
-              user: retryAuthData.user
-            }
-          }
-
-          console.log('✅ Demo user login successful');
-          return { 
-            message: 'Connexion réussie',
-            session: authData.session,
-            user: authData.user
-          }
-        } catch (demoError) {
-          console.error('Erreur avec utilisateur démo:', demoError);
-          
-          // Fallback en mode démo local
-          console.log('🔄 Basculement en mode démo local');
-          return {
-            message: 'Connexion réussie (mode démo local)',
-            session: { 
-              access_token: 'demo-token-local',
-              user: {
-                id: `demo-${demoUser.primerica_id}`,
-                email: demoUser.email,
-                user_metadata: {
-                  primerica_id: demoUser.primerica_id,
-                  is_demo_user: true
-                }
-              }
-            },
-            user: {
-              id: `demo-${demoUser.primerica_id}`,
-              email: demoUser.email
-            }
-          };
-        }
-      }
-
       if (this.isDemoMode()) {
-        throw new Error('Mode démo: seuls les utilisateurs de démonstration sont disponibles')
+        // Mode démo complet - retourner des données simulées
+        const mockUser = {
+          id: `demo-${primerica_id}`,
+          email: `${primerica_id.toLowerCase()}@demo.com`,
+          user_metadata: {
+            primerica_id: primerica_id,
+            first_name: 'Demo',
+            last_name: 'User',
+            is_demo_user: true
+          }
+        };
+
+        return {
+          message: 'Connexion réussie (mode démo)',
+          session: { 
+            access_token: 'demo-token',
+            user: mockUser
+          },
+          user: mockUser
+        };
       }
 
-      // Pour les utilisateurs non-démonstration, essayer la méthode normale
-      console.log('🔍 Looking up user by primerica_id...');
-      
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('email, is_active')
-        .eq('primerica_id', primerica_id)
-        .single()
-
-      if (userError || !userData) {
-        console.error('❌ User lookup failed:', userError);
-        throw new Error('Numéro de représentant introuvable')
-      }
-
-      if (!userData.is_active) {
-        throw new Error('Compte désactivé. Contactez l\'administrateur.')
-      }
-
-      console.log('✅ User found, attempting auth login...');
-      
-      // Utiliser l'email pour la connexion Supabase
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: userData.email,
-        password: password
-      })
-
-      if (authError) {
-        console.error('❌ Auth login error:', authError);
-        
-        if (authError.message.includes('Invalid login credentials')) {
-          throw new Error('Mot de passe incorrect')
-        }
-        if (authError.message.includes('Email not confirmed')) {
-          throw new Error('Email non confirmé. Vérifiez votre boîte de réception.')
-        }
-        
-        throw new Error(authError.message)
-      }
+      // Déléguer au backend auth-api
+      const apiUrl = `${supabaseUrl}/functions/v1/auth-api/login`;
+      const result = await this.makeRequest(apiUrl, {
+        method: 'POST',
+        body: JSON.stringify({ primerica_id, password })
+      });
 
       console.log('✅ Login successful');
-      return { 
-        message: 'Connexion réussie',
-        session: authData.session,
-        user: authData.user
-      }
+      return result;
     } catch (error) {
       console.error('❌ Login failed:', error);
       throw error
@@ -766,34 +452,33 @@ export class SupabaseAPI {
     
     try {
       if (this.isDemoMode()) {
-        // Retourner un profil de démonstration basé sur la session
-        const demoUser = DEMO_USERS[0]; // Par défaut, prendre le premier utilisateur
+        // Retourner un profil de démonstration
         return {
           profile: {
-            id: `demo-${demoUser.primerica_id}`,
-            primerica_id: demoUser.primerica_id,
-            email: demoUser.email,
-            first_name: demoUser.first_name,
-            last_name: demoUser.last_name,
-            initial_role: demoUser.initial_role,
-            current_xp: demoUser.current_xp,
-            current_level: demoUser.current_level,
-            gamified_role: demoUser.gamified_role,
-            is_admin: demoUser.is_admin,
-            is_supreme_admin: demoUser.is_supreme_admin,
+            id: 'demo-user',
+            primerica_id: 'DEMOUSER001',
+            email: 'demo@certifi.quebec',
+            first_name: 'Demo',
+            last_name: 'User',
+            initial_role: 'LES_DEUX',
+            current_xp: 2500,
+            current_level: 5,
+            gamified_role: 'Conseiller Débutant',
+            is_admin: false,
+            is_supreme_admin: false,
             is_active: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             last_activity_at: new Date().toISOString(),
             stats: {
-              total_exams: Math.floor(Math.random() * 10) + 1,
-              passed_exams: Math.floor(Math.random() * 8) + 1,
-              failed_exams: Math.floor(Math.random() * 3),
-              average_score: Math.floor(Math.random() * 30) + 70,
-              total_podcasts_listened: Math.floor(Math.random() * 20) + 5,
-              total_minigames_played: Math.floor(Math.random() * 15) + 2,
-              current_streak: Math.floor(Math.random() * 7) + 1,
-              rank_position: Math.floor(Math.random() * 50) + 1
+              total_exams: 3,
+              passed_exams: 2,
+              failed_exams: 1,
+              average_score: 78,
+              total_podcasts_listened: 8,
+              total_minigames_played: 5,
+              current_streak: 3,
+              rank_position: 25
             }
           }
         };
@@ -977,18 +662,26 @@ export class SupabaseAPI {
   static async getLeaderboard(type: 'global' | 'pqap' | 'fonds_mutuels' = 'global', limit = 50) {
     console.log('🏆 Fetching leaderboard...');
     
-    const mockLeaderboard = DEMO_USERS
-      .map((user, index) => ({
-        id: `user-${index}`,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        current_xp: user.current_xp,
-        current_level: user.current_level,
-        gamified_role: user.gamified_role,
-        initial_role: user.initial_role
-      }))
-      .sort((a, b) => b.current_xp - a.current_xp)
-      .slice(0, limit);
+    const mockLeaderboard = [
+      {
+        id: 'user-1',
+        first_name: 'Admin',
+        last_name: 'Suprême',
+        current_xp: 5000,
+        current_level: 8,
+        gamified_role: 'Maître Administrateur',
+        initial_role: 'LES_DEUX'
+      },
+      {
+        id: 'user-2',
+        first_name: 'Pierre',
+        last_name: 'Bouchard',
+        current_xp: 4200,
+        current_level: 7,
+        gamified_role: 'Conseiller Expert',
+        initial_role: 'LES_DEUX'
+      }
+    ].slice(0, limit);
 
     return { leaderboard: mockLeaderboard };
   }
@@ -998,8 +691,8 @@ export class SupabaseAPI {
     console.log('📊 Fetching dashboard stats...');
     
     return {
-      totalUsers: DEMO_USERS.length,
-      activeUsers: DEMO_USERS.length,
+      totalUsers: 5,
+      activeUsers: 5,
       totalExamAttempts: 45,
       totalPodcastListens: 120,
       roleDistribution: {
@@ -1025,23 +718,26 @@ export class SupabaseAPI {
   } = {}) {
     console.log('👥 Fetching users...');
     
-    let users = DEMO_USERS.map((user, index) => ({
-      id: `user-${index}`,
-      primerica_id: user.primerica_id,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      email: user.email,
-      initial_role: user.initial_role,
-      current_xp: user.current_xp,
-      current_level: user.current_level,
-      gamified_role: user.gamified_role,
-      is_admin: user.is_admin,
-      is_supreme_admin: user.is_supreme_admin,
-      is_active: true,
-      created_at: new Date().toISOString()
-    }));
+    const mockUsers = [
+      {
+        id: 'user-1',
+        primerica_id: 'SUPREMEADMIN001',
+        first_name: 'Admin',
+        last_name: 'Suprême',
+        email: 'supreme.admin@certifi.quebec',
+        initial_role: 'LES_DEUX',
+        current_xp: 5000,
+        current_level: 8,
+        gamified_role: 'Maître Administrateur',
+        is_admin: true,
+        is_supreme_admin: true,
+        is_active: true,
+        created_at: new Date().toISOString()
+      }
+    ];
 
     // Appliquer les filtres
+    let users = mockUsers;
     if (params.search) {
       const search = params.search.toLowerCase();
       users = users.filter(user => 
