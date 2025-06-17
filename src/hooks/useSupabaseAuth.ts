@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase, SupabaseAPI, type User } from '../lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 
@@ -7,6 +7,8 @@ interface AuthState {
   session: Session | null
   isLoading: boolean
   isAuthenticated: boolean
+  connectionStatus: 'connected' | 'disconnected' | 'checking' | 'error'
+  retryCount: number
 }
 
 interface LoginCredentials {
@@ -23,98 +25,349 @@ interface RegisterData {
   initial_role: 'PQAP' | 'FONDS_MUTUELS' | 'LES_DEUX'
 }
 
+// Configuration des timeouts et retry
+const AUTH_TIMEOUT = 15000 // 15 secondes
+const CONNECTION_TIMEOUT = 10000 // 10 secondes
+const MAX_RETRY_ATTEMPTS = 3
+const RETRY_DELAY = 2000 // 2 secondes
+
 export const useSupabaseAuth = () => {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     session: null,
     isLoading: true,
-    isAuthenticated: false
+    isAuthenticated: false,
+    connectionStatus: 'checking',
+    retryCount: 0
   })
 
   const [error, setError] = useState<string | null>(null)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isInitializedRef = useRef(false)
 
-  // Charger le profil utilisateur complet
-  const loadUserProfile = async (session: Session) => {
+  // Fonction pour vérifier la connectivité réseau
+  const checkNetworkConnectivity = async (): Promise<boolean> => {
     try {
+      // Test de connectivité basique
+      if (!navigator.onLine) {
+        return false
+      }
+
+      // Test de connectivité Supabase avec timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT)
+
+      try {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/`, {
+          method: 'HEAD',
+          signal: controller.signal,
+          headers: {
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+          }
+        })
+        clearTimeout(timeoutId)
+        return response.ok
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        return false
+      }
+    } catch (error) {
+      console.error('Network connectivity check failed:', error)
+      return false
+    }
+  }
+
+  // Fonction pour nettoyer les timeouts
+  const clearTimeouts = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current)
+      retryTimeoutRef.current = null
+    }
+  }
+
+  // Fonction pour gérer les timeouts d'authentification
+  const setAuthTimeout = (callback: () => void, timeout: number = AUTH_TIMEOUT) => {
+    clearTimeouts()
+    timeoutRef.current = setTimeout(callback, timeout)
+  }
+
+  // Fonction pour mettre à jour le statut de connexion
+  const updateConnectionStatus = async () => {
+    setAuthState(prev => ({ ...prev, connectionStatus: 'checking' }))
+    
+    const isConnected = await checkNetworkConnectivity()
+    
+    setAuthState(prev => ({
+      ...prev,
+      connectionStatus: isConnected ? 'connected' : 'disconnected'
+    }))
+
+    return isConnected
+  }
+
+  // Charger le profil utilisateur complet avec gestion d'erreur
+  const loadUserProfile = async (session: Session, retryAttempt = 0): Promise<boolean> => {
+    try {
+      setAuthTimeout(() => {
+        console.error('Profile loading timeout')
+        handleAuthError('Timeout lors du chargement du profil utilisateur', retryAttempt)
+      })
+
       const { profile } = await SupabaseAPI.getUserProfile()
+      
+      clearTimeouts()
+      
       setAuthState(prev => ({
         ...prev,
         user: profile,
         session,
         isAuthenticated: true,
-        isLoading: false
+        isLoading: false,
+        connectionStatus: 'connected',
+        retryCount: 0
       }))
+      
+      setError(null)
+      return true
     } catch (err) {
+      clearTimeouts()
       console.error('Erreur lors du chargement du profil:', err)
+      return handleAuthError('Erreur lors du chargement du profil utilisateur', retryAttempt)
+    }
+  }
+
+  // Gestion centralisée des erreurs avec retry
+  const handleAuthError = async (errorMessage: string, retryAttempt = 0): Promise<boolean> => {
+    console.error(`Auth error (attempt ${retryAttempt + 1}):`, errorMessage)
+
+    // Vérifier la connectivité
+    const isConnected = await updateConnectionStatus()
+    
+    if (!isConnected) {
+      setError('Problème de connexion réseau. Vérifiez votre connexion internet.')
       setAuthState(prev => ({
         ...prev,
-        user: null,
-        session: null,
-        isAuthenticated: false,
-        isLoading: false
+        isLoading: false,
+        connectionStatus: 'disconnected'
       }))
+      return false
+    }
+
+    // Retry logic
+    if (retryAttempt < MAX_RETRY_ATTEMPTS) {
+      setError(`Tentative de reconnexion... (${retryAttempt + 1}/${MAX_RETRY_ATTEMPTS})`)
+      setAuthState(prev => ({
+        ...prev,
+        retryCount: retryAttempt + 1
+      }))
+
+      return new Promise((resolve) => {
+        retryTimeoutRef.current = setTimeout(async () => {
+          try {
+            const { data: { session }, error } = await supabase.auth.getSession()
+            if (session && !error) {
+              const success = await loadUserProfile(session, retryAttempt + 1)
+              resolve(success)
+            } else {
+              resolve(await handleAuthError(errorMessage, retryAttempt + 1))
+            }
+          } catch (err) {
+            resolve(await handleAuthError(errorMessage, retryAttempt + 1))
+          }
+        }, RETRY_DELAY * (retryAttempt + 1)) // Délai progressif
+      })
+    }
+
+    // Échec final
+    setError(errorMessage)
+    setAuthState(prev => ({
+      ...prev,
+      user: null,
+      session: null,
+      isAuthenticated: false,
+      isLoading: false,
+      connectionStatus: 'error'
+    }))
+    return false
+  }
+
+  // Fonction de retry manuel
+  const retryConnection = async () => {
+    setError(null)
+    setAuthState(prev => ({
+      ...prev,
+      isLoading: true,
+      retryCount: 0,
+      connectionStatus: 'checking'
+    }))
+
+    const isConnected = await updateConnectionStatus()
+    if (!isConnected) {
+      setError('Impossible de se connecter au serveur')
+      setAuthState(prev => ({
+        ...prev,
+        isLoading: false,
+        connectionStatus: 'disconnected'
+      }))
+      return
+    }
+
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error) throw error
+
+      if (session) {
+        await loadUserProfile(session)
+      } else {
+        setAuthState(prev => ({
+          ...prev,
+          isLoading: false,
+          connectionStatus: 'connected'
+        }))
+      }
+    } catch (err) {
+      await handleAuthError('Erreur lors de la reconnexion')
     }
   }
 
   useEffect(() => {
-    // Récupérer la session initiale
+    // Éviter la double initialisation
+    if (isInitializedRef.current) return
+    isInitializedRef.current = true
+
+    // Récupérer la session initiale avec gestion d'erreur complète
     const getInitialSession = async () => {
       try {
+        // Vérifier la connectivité d'abord
+        const isConnected = await updateConnectionStatus()
+        if (!isConnected) {
+          setError('Aucune connexion réseau détectée')
+          setAuthState(prev => ({
+            ...prev,
+            isLoading: false,
+            connectionStatus: 'disconnected'
+          }))
+          return
+        }
+
+        // Timeout pour la récupération de session
+        setAuthTimeout(() => {
+          handleAuthError('Timeout lors de la récupération de la session')
+        })
+
         const { data: { session }, error } = await supabase.auth.getSession()
         
+        clearTimeouts()
+
         if (error) {
           console.error('Erreur lors de la récupération de la session:', error)
-          setAuthState(prev => ({ ...prev, isLoading: false }))
+          await handleAuthError('Erreur lors de la récupération de la session')
           return
         }
 
         if (session) {
           await loadUserProfile(session)
         } else {
-          setAuthState(prev => ({ ...prev, isLoading: false }))
+          setAuthState(prev => ({
+            ...prev,
+            isLoading: false,
+            connectionStatus: 'connected'
+          }))
         }
       } catch (err) {
+        clearTimeouts()
         console.error('Erreur lors de l\'initialisation de l\'auth:', err)
-        setAuthState(prev => ({ ...prev, isLoading: false }))
+        await handleAuthError('Erreur lors de l\'initialisation de l\'authentification')
       }
     }
 
     getInitialSession()
 
-    // Écouter les changements d'authentification
+    // Écouter les changements d'authentification avec gestion d'erreur
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state changed:', event, session?.user?.id)
         
-        if (event === 'SIGNED_IN' && session) {
-          await loadUserProfile(session)
-        } else if (event === 'SIGNED_OUT') {
-          setAuthState({
-            user: null,
-            session: null,
-            isLoading: false,
-            isAuthenticated: false
-          })
-        } else if (event === 'TOKEN_REFRESHED' && session) {
-          setAuthState(prev => ({
-            ...prev,
-            session
-          }))
+        try {
+          if (event === 'SIGNED_IN' && session) {
+            await loadUserProfile(session)
+          } else if (event === 'SIGNED_OUT') {
+            clearTimeouts()
+            setAuthState({
+              user: null,
+              session: null,
+              isLoading: false,
+              isAuthenticated: false,
+              connectionStatus: 'connected',
+              retryCount: 0
+            })
+            setError(null)
+          } else if (event === 'TOKEN_REFRESHED' && session) {
+            setAuthState(prev => ({
+              ...prev,
+              session,
+              connectionStatus: 'connected'
+            }))
+          }
+        } catch (err) {
+          console.error('Error in auth state change handler:', err)
+          await handleAuthError('Erreur lors du changement d\'état d\'authentification')
         }
       }
     )
 
+    // Écouter les changements de connectivité réseau
+    const handleOnline = () => {
+      console.log('Network back online')
+      if (authState.connectionStatus === 'disconnected') {
+        retryConnection()
+      }
+    }
+
+    const handleOffline = () => {
+      console.log('Network went offline')
+      setAuthState(prev => ({
+        ...prev,
+        connectionStatus: 'disconnected'
+      }))
+      setError('Connexion réseau perdue')
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
     return () => {
       subscription.unsubscribe()
+      clearTimeouts()
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
     }
   }, [])
 
   const login = async (credentials: LoginCredentials) => {
     setError(null)
-    setAuthState(prev => ({ ...prev, isLoading: true }))
+    setAuthState(prev => ({ ...prev, isLoading: true, retryCount: 0 }))
 
     try {
+      // Vérifier la connectivité
+      const isConnected = await updateConnectionStatus()
+      if (!isConnected) {
+        throw new Error('Aucune connexion réseau disponible')
+      }
+
+      // Timeout pour la connexion
+      setAuthTimeout(() => {
+        throw new Error('Timeout lors de la connexion')
+      }, AUTH_TIMEOUT)
+
       const result = await SupabaseAPI.login(credentials.primerica_id, credentials.password)
+      
+      clearTimeouts()
       
       if (result.error) {
         throw new Error(result.error)
@@ -123,6 +376,7 @@ export const useSupabaseAuth = () => {
       // La session sera automatiquement gérée par onAuthStateChange
       return result
     } catch (err) {
+      clearTimeouts()
       const errorMessage = err instanceof Error ? err.message : 'Erreur de connexion'
       setError(errorMessage)
       setAuthState(prev => ({ ...prev, isLoading: false }))
@@ -135,7 +389,18 @@ export const useSupabaseAuth = () => {
     setAuthState(prev => ({ ...prev, isLoading: true }))
 
     try {
+      const isConnected = await updateConnectionStatus()
+      if (!isConnected) {
+        throw new Error('Aucune connexion réseau disponible')
+      }
+
+      setAuthTimeout(() => {
+        throw new Error('Timeout lors de l\'inscription')
+      })
+
       const result = await SupabaseAPI.register(data)
+      
+      clearTimeouts()
       
       if (result.error) {
         throw new Error(result.error)
@@ -144,6 +409,7 @@ export const useSupabaseAuth = () => {
       setAuthState(prev => ({ ...prev, isLoading: false }))
       return result
     } catch (err) {
+      clearTimeouts()
       const errorMessage = err instanceof Error ? err.message : 'Erreur lors de l\'inscription'
       setError(errorMessage)
       setAuthState(prev => ({ ...prev, isLoading: false }))
@@ -155,6 +421,7 @@ export const useSupabaseAuth = () => {
     setError(null)
     
     try {
+      clearTimeouts()
       const { error } = await supabase.auth.signOut()
       if (error) throw error
       
@@ -170,6 +437,11 @@ export const useSupabaseAuth = () => {
     setError(null)
     
     try {
+      const isConnected = await updateConnectionStatus()
+      if (!isConnected) {
+        throw new Error('Aucune connexion réseau disponible')
+      }
+
       const result = await SupabaseAPI.resetPassword(email)
       
       if (result.error) {
@@ -224,6 +496,7 @@ export const useSupabaseAuth = () => {
     updatePassword,
     refreshProfile,
     clearError,
+    retryConnection,
     
     // Helpers pour vérifier les permissions
     isAdmin: authState.user?.is_admin || authState.user?.is_supreme_admin || false,

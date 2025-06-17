@@ -12,6 +12,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'certifi-quebec-web'
+    }
   }
 })
 
@@ -162,11 +167,50 @@ export interface AdminLog {
   }
 }
 
-// API Helpers
+// API Helpers avec gestion d'erreur améliorée
 export class SupabaseAPI {
+  private static async makeRequest(url: string, options: RequestInit = {}) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 secondes timeout
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers
+        }
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+
+      return response.json()
+    } catch (error) {
+      clearTimeout(timeoutId)
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error('Timeout: La requête a pris trop de temps')
+        }
+        throw error
+      }
+      
+      throw new Error('Erreur réseau inconnue')
+    }
+  }
+
   private static getAuthHeaders() {
-    return {
-      'Authorization': `Bearer ${supabase.auth.session()?.access_token}`,
+    const session = supabase.auth.getSession()
+    return session ? {
+      'Authorization': `Bearer ${session}`,
+      'Content-Type': 'application/json'
+    } : {
       'Content-Type': 'application/json'
     }
   }
@@ -180,94 +224,80 @@ export class SupabaseAPI {
     last_name: string
     initial_role: 'PQAP' | 'FONDS_MUTUELS' | 'LES_DEUX'
   }) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/auth-api/register`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/auth-api/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })
-    return response.json()
   }
 
   static async login(primerica_id: string, password: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/auth-api/login`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/auth-api/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primerica_id, password })
     })
-    return response.json()
   }
 
   static async resetPassword(email: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/auth-api/reset-password`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/auth-api/reset-password`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
     })
-    return response.json()
   }
 
   // User API
   static async getUserProfile() {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/profile`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/profile`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async getPodcasts() {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/podcasts`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/podcasts`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async markPodcastListened(podcast_id: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/podcast-listened`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/podcast-listened`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ podcast_id })
     })
-    return response.json()
   }
 
   static async getExams(permission?: string) {
     const url = new URL(`${supabaseUrl}/functions/v1/user-api/exams`)
     if (permission) url.searchParams.set('permission', permission)
     
-    const response = await fetch(url.toString(), {
+    return this.makeRequest(url.toString(), {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async startExam(exam_id: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/start-exam?exam_id=${exam_id}`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/start-exam?exam_id=${exam_id}`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async submitExam(exam_id: string, answers: Record<string, string>, time_spent_seconds: number) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/submit-exam`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/submit-exam`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ exam_id, answers, time_spent_seconds })
     })
-    return response.json()
   }
 
   static async getExamAttempts() {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/exam-attempts`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/exam-attempts`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async getMinigames() {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/minigames`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/minigames`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async submitMinigameScore(data: {
@@ -276,34 +306,30 @@ export class SupabaseAPI {
     max_possible_score?: number
     game_session_data?: any
   }) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/submit-minigame-score`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/submit-minigame-score`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify(data)
     })
-    return response.json()
   }
 
   static async getLeaderboard(type: 'global' | 'pqap' | 'fonds_mutuels' = 'global', limit = 50) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/leaderboard?type=${type}&limit=${limit}`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/leaderboard?type=${type}&limit=${limit}`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async getRecentActivities(limit = 20) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/user-api/recent-activities?limit=${limit}`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/user-api/recent-activities?limit=${limit}`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   // Admin API
   static async getDashboardStats() {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/dashboard-stats`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/dashboard-stats`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async getUsers(params: {
@@ -317,17 +343,15 @@ export class SupabaseAPI {
       if (value !== undefined) url.searchParams.set(key, value.toString())
     })
     
-    const response = await fetch(url.toString(), {
+    return this.makeRequest(url.toString(), {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async getUser(userId: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/user/${userId}`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/user/${userId}`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async updateUserPermissions(userId: string, data: {
@@ -335,29 +359,26 @@ export class SupabaseAPI {
     is_admin?: boolean
     is_supreme_admin?: boolean
   }) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/user-permissions/${userId}`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/user-permissions/${userId}`, {
       method: 'PUT',
       headers: this.getAuthHeaders(),
       body: JSON.stringify(data)
     })
-    return response.json()
   }
 
   static async deleteUser(userId: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/user/${userId}`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/user/${userId}`, {
       method: 'DELETE',
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async awardXP(userId: string, xpAmount: number, reason?: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/award-xp`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/award-xp`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ user_id: userId, xp_amount: xpAmount, reason })
     })
-    return response.json()
   }
 
   static async getContent(params: {
@@ -370,44 +391,39 @@ export class SupabaseAPI {
       if (value !== undefined) url.searchParams.set(key, value.toString())
     })
     
-    const response = await fetch(url.toString(), {
+    return this.makeRequest(url.toString(), {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async createContent(type: string, data: any) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/create-content`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/create-content`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ type, data })
     })
-    return response.json()
   }
 
   static async updateContent(type: string, id: string, data: any) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/update-content`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/update-content`, {
       method: 'PUT',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ type, id, data })
     })
-    return response.json()
   }
 
   static async deleteContent(type: string, id: string) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/content`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/content`, {
       method: 'DELETE',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ type, id })
     })
-    return response.json()
   }
 
   static async getGlobalActivities(limit = 50) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-api/global-activities?limit=${limit}`, {
+    return this.makeRequest(`${supabaseUrl}/functions/v1/admin-api/global-activities?limit=${limit}`, {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 
   static async getAdminLogs(params: {
@@ -419,9 +435,8 @@ export class SupabaseAPI {
       if (value !== undefined) url.searchParams.set(key, value.toString())
     })
     
-    const response = await fetch(url.toString(), {
+    return this.makeRequest(url.toString(), {
       headers: this.getAuthHeaders()
     })
-    return response.json()
   }
 }
