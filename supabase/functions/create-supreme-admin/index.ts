@@ -7,314 +7,232 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-interface CreateSupremeAdminResponse {
-  success: boolean
-  user_id?: string
-  message: string
-  details?: {
-    auth_created: boolean
-    profile_created: boolean
-    permissions_granted: number
-    was_existing: boolean
-  }
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ error: 'Méthode non autorisée' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-
   try {
+    console.log('🚀 Début de la création du Supreme Admin...')
+
     // Utiliser la Service Role Key pour les opérations admin
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    console.log('🚀 Début de la création du Supreme Admin...')
-
-    // Configuration du Supreme Admin
-    const adminConfig = {
+    const supremeAdminData = {
       email: 'supreme.admin@certifi.quebec',
-      password: 'ChangeMe123!',
+      password: 'password123', // Mot de passe cohérent avec les autres comptes démo
       primerica_id: 'SUPREMEADMIN001',
       first_name: 'Admin',
       last_name: 'Suprême',
       initial_role: 'LES_DEUX' as const
     }
 
-    let authCreated = false
-    let profileCreated = false
+    let authUserId: string
     let wasExisting = false
-    let adminUserId: string
+    let authCreated = false
 
-    // =====================================================
-    // 1. VÉRIFIER SI L'UTILISATEUR EXISTE DÉJÀ
-    // =====================================================
-    
+    // 1. Vérifier si l'utilisateur existe déjà dans public.users
     console.log('🔍 Vérification de l\'existence de l\'utilisateur...')
-    
-    // Vérifier dans la table users d'abord
-    const { data: existingProfile, error: profileCheckError } = await supabase
+    const { data: existingUser } = await supabase
       .from('users')
-      .select('id, primerica_id, email, is_admin, is_supreme_admin')
-      .eq('primerica_id', adminConfig.primerica_id)
-      .maybeSingle()
+      .select('id, email, is_supreme_admin')
+      .eq('primerica_id', supremeAdminData.primerica_id)
+      .single()
 
-    if (profileCheckError && profileCheckError.code !== 'PGRST116') {
-      console.error('❌ Erreur lors de la vérification du profil:', profileCheckError)
-      throw new Error(`Erreur lors de la vérification: ${profileCheckError.message}`)
-    }
-
-    if (existingProfile) {
-      console.log('👤 Utilisateur existant trouvé:', existingProfile.id)
-      adminUserId = existingProfile.id
+    if (existingUser) {
+      console.log('👤 Utilisateur existant trouvé:', existingUser.id)
+      authUserId = existingUser.id
       wasExisting = true
 
-      // Mettre à jour les permissions admin si nécessaire
-      if (!existingProfile.is_admin || !existingProfile.is_supreme_admin) {
-        console.log('🔧 Mise à jour des permissions admin...')
-        
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({
-            is_admin: true,
-            is_supreme_admin: true,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', adminUserId)
+      // Mettre à jour le mot de passe si nécessaire
+      console.log('🔄 Mise à jour du mot de passe...')
+      const { error: updatePasswordError } = await supabase.auth.admin.updateUserById(
+        authUserId,
+        { password: supremeAdminData.password }
+      )
 
-        if (updateError) {
-          console.error('❌ Erreur lors de la mise à jour:', updateError)
-          throw new Error(`Erreur lors de la mise à jour: ${updateError.message}`)
-        }
-
-        console.log('✅ Permissions admin mises à jour')
+      if (updatePasswordError) {
+        console.warn('⚠️ Erreur lors de la mise à jour du mot de passe:', updatePasswordError.message)
+      } else {
+        console.log('✅ Mot de passe mis à jour avec succès')
       }
     } else {
-      // =====================================================
-      // 2. CRÉER L'UTILISATEUR DANS AUTH
-      // =====================================================
-      
-      console.log('👤 Création de l\'utilisateur dans Supabase Auth...')
-      
+      // 2. Créer l'utilisateur dans auth.users
+      console.log('➕ Création de l\'utilisateur dans Auth...')
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: adminConfig.email,
-        password: adminConfig.password,
+        email: supremeAdminData.email,
+        password: supremeAdminData.password,
         email_confirm: true,
         user_metadata: {
-          primerica_id: adminConfig.primerica_id,
-          first_name: adminConfig.first_name,
-          last_name: adminConfig.last_name,
-          initial_role: adminConfig.initial_role,
+          primerica_id: supremeAdminData.primerica_id,
+          first_name: supremeAdminData.first_name,
+          last_name: supremeAdminData.last_name,
+          initial_role: supremeAdminData.initial_role,
           is_demo_user: false
         }
       })
 
       if (authError) {
-        console.error('❌ Erreur lors de la création auth:', authError)
-        
-        // Si l'utilisateur existe déjà dans auth, récupérer son ID
-        if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
-          console.log('🔍 Utilisateur auth existe déjà, récupération de l\'ID...')
-          
-          // Essayer de récupérer l'utilisateur par email
-          const { data: existingAuthUser, error: getUserError } = await supabase.auth.admin.listUsers()
-          
-          if (getUserError) {
-            throw new Error(`Erreur lors de la récupération des utilisateurs: ${getUserError.message}`)
-          }
-
-          const foundUser = existingAuthUser.users.find(u => u.email === adminConfig.email)
-          if (!foundUser) {
-            throw new Error('Utilisateur introuvable après vérification d\'existence')
-          }
-
-          adminUserId = foundUser.id
-          console.log('✅ ID utilisateur auth récupéré:', adminUserId)
-        } else {
-          throw new Error(`Erreur lors de la création auth: ${authError.message}`)
-        }
-      } else {
-        adminUserId = authData.user.id
-        authCreated = true
-        console.log('✅ Utilisateur auth créé avec ID:', adminUserId)
+        console.error('❌ Erreur lors de la création Auth:', authError)
+        throw new Error(`Erreur création Auth: ${authError.message}`)
       }
 
-      // =====================================================
-      // 3. CRÉER LE PROFIL DANS PUBLIC.USERS
-      // =====================================================
-      
-      console.log('📝 Création du profil utilisateur...')
-      
-      const { error: profileError } = await supabase
-        .from('users')
-        .upsert({
-          id: adminUserId,
-          primerica_id: adminConfig.primerica_id,
-          email: adminConfig.email,
-          first_name: adminConfig.first_name,
-          last_name: adminConfig.last_name,
-          initial_role: adminConfig.initial_role,
-          current_xp: 5000,
-          current_level: 8,
-          gamified_role: 'Maître Administrateur',
-          is_admin: true,
-          is_supreme_admin: true,
-          is_active: true,
-          last_activity_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }, { 
-          onConflict: 'id',
-          ignoreDuplicates: false 
-        })
-
-      if (profileError) {
-        console.error('❌ Erreur lors de la création du profil:', profileError)
-        
-        // Nettoyer l'utilisateur auth si la création du profil échoue
-        if (authCreated) {
-          console.log('🧹 Nettoyage de l\'utilisateur auth...')
-          await supabase.auth.admin.deleteUser(adminUserId)
-        }
-        
-        throw new Error(`Erreur lors de la création du profil: ${profileError.message}`)
-      }
-
-      profileCreated = true
-      console.log('✅ Profil utilisateur créé/mis à jour')
+      authUserId = authData.user.id
+      authCreated = true
+      console.log('✅ Utilisateur Auth créé:', authUserId)
     }
 
-    // =====================================================
-    // 4. ATTRIBUER TOUTES LES PERMISSIONS
-    // =====================================================
-    
+    // 3. Créer/Mettre à jour le profil dans public.users
+    console.log('👤 Création/Mise à jour du profil...')
+    const { error: profileError } = await supabase
+      .from('users')
+      .upsert({
+        id: authUserId,
+        primerica_id: supremeAdminData.primerica_id,
+        email: supremeAdminData.email,
+        first_name: supremeAdminData.first_name,
+        last_name: supremeAdminData.last_name,
+        initial_role: supremeAdminData.initial_role,
+        is_admin: true,
+        is_supreme_admin: true,
+        is_active: true,
+        current_xp: 5000,
+        current_level: 8,
+        gamified_role: 'Maître Administrateur'
+      }, { 
+        onConflict: 'id',
+        ignoreDuplicates: false 
+      })
+
+    if (profileError) {
+      console.error('❌ Erreur lors de la création du profil:', profileError)
+      
+      // Nettoyage en cas d'erreur (si on vient de créer l'auth user)
+      if (authCreated) {
+        console.log('🧹 Nettoyage de l\'utilisateur Auth créé...')
+        await supabase.auth.admin.deleteUser(authUserId)
+      }
+      
+      throw new Error(`Erreur création profil: ${profileError.message}`)
+    }
+
+    console.log('✅ Profil créé/mis à jour avec succès')
+
+    // 4. Attribuer toutes les permissions disponibles
     console.log('🔑 Attribution des permissions...')
     
     // Récupérer toutes les permissions disponibles
-    const { data: permissions, error: permissionsError } = await supabase
+    const { data: allPermissions, error: permissionsError } = await supabase
       .from('permissions')
-      .select('id, name')
+      .select('id')
 
     if (permissionsError) {
-      console.error('❌ Erreur lors de la récupération des permissions:', permissionsError)
-      throw new Error(`Erreur permissions: ${permissionsError.message}`)
-    }
-
-    let permissionsGranted = 0
-
-    if (permissions && permissions.length > 0) {
-      // Supprimer les anciennes permissions pour éviter les doublons
+      console.warn('⚠️ Erreur lors de la récupération des permissions:', permissionsError.message)
+    } else if (allPermissions && allPermissions.length > 0) {
+      // Supprimer les anciennes permissions
       await supabase
         .from('user_permissions')
         .delete()
-        .eq('user_id', adminUserId)
+        .eq('user_id', authUserId)
 
-      // Attribuer toutes les permissions
-      const permissionInserts = permissions.map(permission => ({
-        user_id: adminUserId,
-        permission_id: permission.id,
-        granted_by: adminUserId,
-        granted_at: new Date().toISOString()
+      // Ajouter toutes les permissions
+      const permissionInserts = allPermissions.map(perm => ({
+        user_id: authUserId,
+        permission_id: perm.id,
+        granted_by: authUserId // Auto-attribution
       }))
 
-      const { error: permissionError } = await supabase
+      const { error: insertPermError } = await supabase
         .from('user_permissions')
         .insert(permissionInserts)
 
-      if (permissionError) {
-        console.error('❌ Erreur lors de l\'attribution des permissions:', permissionError)
-        // Ne pas faire échouer le processus pour les permissions
-        console.log('⚠️ Permissions non attribuées, mais utilisateur créé')
+      if (insertPermError) {
+        console.warn('⚠️ Erreur lors de l\'attribution des permissions:', insertPermError.message)
       } else {
-        permissionsGranted = permissions.length
-        console.log(`✅ ${permissionsGranted} permissions attribuées`)
+        console.log(`✅ ${allPermissions.length} permissions attribuées`)
       }
-    } else {
-      console.log('⚠️ Aucune permission trouvée dans la base de données')
     }
 
-    // =====================================================
-    // 5. LOGGER L'ACTION ADMIN
-    // =====================================================
-    
+    // 5. Logger l'action admin
+    console.log('📝 Enregistrement de l\'action admin...')
     try {
       await supabase
         .from('admin_logs')
         .insert({
-          admin_user_id: adminUserId,
-          action_type: 'create_supreme_admin',
+          admin_user_id: authUserId,
+          action_type: wasExisting ? 'update_supreme_admin' : 'create_supreme_admin',
           target_entity: 'users',
-          target_id: adminUserId,
+          target_id: authUserId,
           details_json: {
-            primerica_id: adminConfig.primerica_id,
-            email: adminConfig.email,
-            auth_created: authCreated,
-            profile_created: profileCreated,
+            primerica_id: supremeAdminData.primerica_id,
+            email: supremeAdminData.email,
             was_existing: wasExisting,
-            permissions_granted: permissionsGranted
+            auth_created: authCreated
           },
-          ip_address: req.headers.get('x-forwarded-for') || 'unknown',
-          user_agent: req.headers.get('user-agent') || 'unknown',
-          occurred_at: new Date().toISOString()
+          ip_address: req.headers.get('x-forwarded-for') || 'system',
+          user_agent: req.headers.get('user-agent') || 'create-supreme-admin-function'
         })
-      
-      console.log('📝 Action loggée dans admin_logs')
+      console.log('✅ Action loggée avec succès')
     } catch (logError) {
-      console.warn('⚠️ Impossible de logger l\'action:', logError)
-      // Ne pas faire échouer le processus pour les logs
+      console.warn('⚠️ Erreur lors du logging:', logError)
     }
 
-    // =====================================================
-    // 6. RÉPONSE DE SUCCÈS
-    // =====================================================
-    
-    const response: CreateSupremeAdminResponse = {
+    // 6. Réponse de succès
+    const response = {
       success: true,
-      user_id: adminUserId,
+      user_id: authUserId,
       message: wasExisting 
         ? 'Supreme Admin mis à jour avec succès' 
         : 'Supreme Admin créé avec succès',
       details: {
         auth_created: authCreated,
-        profile_created: profileCreated,
-        permissions_granted: permissionsGranted,
-        was_existing: wasExisting
+        profile_created: !wasExisting,
+        permissions_granted: allPermissions?.length || 0,
+        was_existing: wasExisting,
+        credentials: {
+          email: supremeAdminData.email,
+          primerica_id: supremeAdminData.primerica_id,
+          password: supremeAdminData.password
+        }
       }
     }
 
-    console.log('🎉 SUCCESS:', response.message)
-    console.log('📊 Détails:', response.details)
+    console.log('🎉 Supreme Admin configuré avec succès!')
+    console.log('📧 Email:', supremeAdminData.email)
+    console.log('🆔 Primerica ID:', supremeAdminData.primerica_id)
+    console.log('🔑 Mot de passe:', supremeAdminData.password)
 
     return new Response(
       JSON.stringify(response),
       { 
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json' 
+        } 
       }
     )
 
   } catch (error) {
     console.error('💥 Erreur fatale:', error)
     
-    const errorResponse: CreateSupremeAdminResponse = {
-      success: false,
-      message: `Erreur lors de la création du Supreme Admin: ${error instanceof Error ? error.message : 'Erreur inconnue'}`
-    }
-
     return new Response(
-      JSON.stringify(errorResponse),
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Erreur inconnue',
+        details: {
+          timestamp: new Date().toISOString(),
+          function: 'create-supreme-admin'
+        }
+      }),
       { 
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json' 
+        } 
       }
     )
   }
