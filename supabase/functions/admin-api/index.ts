@@ -325,6 +325,150 @@ serve(async (req) => {
             )
           }
 
+          case 'create-demo-users': {
+            // Créer les utilisateurs de démonstration
+            const demoUsers = [
+              {
+                primerica_id: 'SUPREMEADMIN001',
+                email: 'supreme.admin@certifi.quebec',
+                first_name: 'Admin',
+                last_name: 'Suprême',
+                initial_role: 'LES_DEUX',
+                is_admin: true,
+                is_supreme_admin: true
+              },
+              {
+                primerica_id: 'REGULARADMIN001',
+                email: 'admin@certifi.quebec',
+                first_name: 'Admin',
+                last_name: 'Régulier',
+                initial_role: 'LES_DEUX',
+                is_admin: true,
+                is_supreme_admin: false
+              },
+              {
+                primerica_id: 'PQAPUSER001',
+                email: 'pqap.user@certifi.quebec',
+                first_name: 'Jean',
+                last_name: 'Dupont',
+                initial_role: 'PQAP'
+              },
+              {
+                primerica_id: 'FONDSUSER001',
+                email: 'fonds.user@certifi.quebec',
+                first_name: 'Marie',
+                last_name: 'Tremblay',
+                initial_role: 'FONDS_MUTUELS'
+              },
+              {
+                primerica_id: 'BOTHUSER001',
+                email: 'both.user@certifi.quebec',
+                first_name: 'Pierre',
+                last_name: 'Bouchard',
+                initial_role: 'LES_DEUX'
+              }
+            ]
+
+            let created = 0
+            const errors = []
+
+            for (const demoUser of demoUsers) {
+              try {
+                // Créer l'utilisateur avec Supabase Auth
+                const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+                  email: demoUser.email,
+                  password: 'password123',
+                  email_confirm: true,
+                  user_metadata: {
+                    primerica_id: demoUser.primerica_id,
+                    first_name: demoUser.first_name,
+                    last_name: demoUser.last_name,
+                    initial_role: demoUser.initial_role,
+                    is_demo_user: true
+                  }
+                })
+
+                if (authError) {
+                  errors.push(`${demoUser.primerica_id}: ${authError.message}`)
+                  continue
+                }
+
+                // Créer le profil utilisateur
+                const { error: profileError } = await supabase.rpc(
+                  'create_user_with_permissions',
+                  {
+                    user_id: authData.user.id,
+                    primerica_id_param: demoUser.primerica_id,
+                    email_param: demoUser.email,
+                    first_name_param: demoUser.first_name,
+                    last_name_param: demoUser.last_name,
+                    initial_role_param: demoUser.initial_role
+                  }
+                )
+
+                if (profileError) {
+                  await supabase.auth.admin.deleteUser(authData.user.id)
+                  errors.push(`${demoUser.primerica_id}: ${profileError.message}`)
+                  continue
+                }
+
+                // Mettre à jour les flags admin si nécessaire
+                if (demoUser.is_admin || demoUser.is_supreme_admin) {
+                  await supabase
+                    .from('users')
+                    .update({
+                      is_admin: demoUser.is_admin || false,
+                      is_supreme_admin: demoUser.is_supreme_admin || false
+                    })
+                    .eq('id', authData.user.id)
+                }
+
+                created++
+              } catch (error) {
+                errors.push(`${demoUser.primerica_id}: ${error.message}`)
+              }
+            }
+
+            await logAdminAction('create_demo_users', 'users', null, { created, errors })
+
+            return new Response(
+              JSON.stringify({
+                message: `${created} utilisateurs de démonstration créés`,
+                created,
+                errors
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          case 'toggle-demo-users': {
+            const { activate } = await req.json()
+            
+            // Mettre à jour tous les utilisateurs de démonstration
+            const { data: updatedUsers, error } = await supabase
+              .from('users')
+              .update({ is_active: activate })
+              .in('primerica_id', ['SUPREMEADMIN001', 'REGULARADMIN001', 'PQAPUSER001', 'FONDSUSER001', 'BOTHUSER001'])
+              .select('id')
+
+            if (error) {
+              return new Response(
+                JSON.stringify({ error: error.message }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            await logAdminAction('toggle_demo_users', 'users', null, { activate, count: updatedUsers?.length || 0 })
+
+            return new Response(
+              JSON.stringify({
+                message: `Utilisateurs de démonstration ${activate ? 'activés' : 'désactivés'}`,
+                count: updatedUsers?.length || 0
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
           default:
             return new Response(
               JSON.stringify({ error: 'Endpoint non trouvé' }),

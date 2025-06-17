@@ -4,6 +4,9 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Variables d\'environnement Supabase manquantes')
+  console.error('VITE_SUPABASE_URL:', supabaseUrl ? 'Present' : 'Missing')
+  console.error('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Present' : 'Missing')
   throw new Error('Variables d\'environnement Supabase manquantes')
 }
 
@@ -179,8 +182,27 @@ export interface AdminLog {
   }
 }
 
-// API Helpers avec authentification robuste et mode démo
+// API Helpers avec authentification robuste et gestion d'erreur améliorée
 export class SupabaseAPI {
+  private static async getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'apikey': supabaseAnonKey,
+      'X-Client-Info': 'certifi-quebec-web'
+    }
+
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    } else {
+      // Utiliser la clé anonyme comme fallback pour les endpoints publics
+      headers['Authorization'] = `Bearer ${supabaseAnonKey}`
+    }
+
+    return headers
+  }
+
   private static async makeRequest(url: string, options: RequestInit = {}) {
     console.log('🌐 Making request to:', url);
 
@@ -189,13 +211,13 @@ export class SupabaseAPI {
     const timeoutId = setTimeout(() => controller.abort(), timeout)
 
     try {
+      const headers = await this.getAuthHeaders()
+      
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
         headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseAnonKey,
-          'X-Client-Info': 'certifi-quebec-web',
+          ...headers,
           ...options.headers
         }
       })
@@ -243,61 +265,7 @@ export class SupabaseAPI {
     return import.meta.env.VITE_MOCK_API === 'true' || !supabaseUrl || !supabaseAnonKey
   }
 
-  // Fonction pour créer les utilisateurs de démonstration - délègue au backend
-  static async createDemoUsers() {
-    console.log('🎭 Création des utilisateurs de démonstration...');
-    
-    if (this.isDemoMode()) {
-      console.log('Mode démo activé - simulation de la création des utilisateurs');
-      return { success: true, message: 'Utilisateurs de démonstration simulés créés' };
-    }
-
-    try {
-      const apiUrl = `${supabaseUrl}/functions/v1/admin-api/create-demo-users`;
-      const result = await this.makeRequest(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`
-        }
-      });
-
-      return result;
-    } catch (error) {
-      console.error('Erreur lors de la création des utilisateurs de démonstration:', error);
-      throw error;
-    }
-  }
-
-  // Fonction pour basculer l'état des utilisateurs de démonstration - délègue au backend
-  static async toggleDemoUsers(activate: boolean) {
-    console.log(`🔄 ${activate ? 'Activation' : 'Désactivation'} des utilisateurs de démonstration...`);
-    
-    if (this.isDemoMode()) {
-      return {
-        success: true,
-        message: `Simulation: utilisateurs de démonstration ${activate ? 'activés' : 'désactivés'}`,
-        count: 5
-      };
-    }
-
-    try {
-      const apiUrl = `${supabaseUrl}/functions/v1/admin-api/toggle-demo-users`;
-      const result = await this.makeRequest(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`
-        },
-        body: JSON.stringify({ activate })
-      });
-
-      return result;
-    } catch (error) {
-      console.error('Erreur lors de la bascule des utilisateurs de démonstration:', error);
-      throw error;
-    }
-  }
-
-  // Auth API - Simplifié pour déléguer au backend
+  // Auth API - Utilise directement Supabase Auth
   static async register(data: {
     email: string
     password: string
@@ -326,15 +294,31 @@ export class SupabaseAPI {
         };
       }
 
-      // Déléguer au backend auth-api
-      const apiUrl = `${supabaseUrl}/functions/v1/auth-api/register`;
-      const result = await this.makeRequest(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
+      // Utiliser Supabase Auth directement
+      const { data: authData, error } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          data: {
+            primerica_id: data.primerica_id,
+            first_name: data.first_name,
+            last_name: data.last_name,
+            initial_role: data.initial_role
+          }
+        }
+      })
+
+      if (error) {
+        console.error('❌ Registration failed:', error);
+        throw new Error(error.message)
+      }
 
       console.log('✅ Registration successful');
-      return result;
+      return {
+        user: authData.user,
+        session: authData.session,
+        message: 'Utilisateur créé avec succès'
+      };
     } catch (error) {
       console.error('❌ Registration failed:', error);
       throw error
@@ -373,15 +357,38 @@ export class SupabaseAPI {
         };
       }
 
-      // Déléguer au backend auth-api
-      const apiUrl = `${supabaseUrl}/functions/v1/auth-api/login`;
-      const result = await this.makeRequest(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({ primerica_id, password })
-      });
+      // Trouver l'utilisateur par primerica_id
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email, is_active')
+        .eq('primerica_id', primerica_id)
+        .single()
+
+      if (userError || !userData) {
+        throw new Error('Numéro de représentant introuvable')
+      }
+
+      if (!userData.is_active) {
+        throw new Error('Compte désactivé. Contactez l\'administrateur.')
+      }
+
+      // Connexion avec email/password
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: userData.email,
+        password: password
+      })
+
+      if (signInError) {
+        console.error('❌ Login failed:', signInError);
+        throw new Error('Mot de passe incorrect')
+      }
 
       console.log('✅ Login successful');
-      return result;
+      return {
+        message: 'Connexion réussie',
+        session: signInData.session,
+        user: signInData.user
+      };
     } catch (error) {
       console.error('❌ Login failed:', error);
       throw error
@@ -504,7 +511,7 @@ export class SupabaseAPI {
         throw new Error('Erreur lors de la récupération du profil')
       }
 
-      // Obtenir les statistiques utilisateur si la fonction existe
+      // Obtenir les statistiques utilisateur
       let statsData = null
       try {
         const { data } = await supabase.rpc('get_user_stats', { user_uuid: user.id })
@@ -534,6 +541,54 @@ export class SupabaseAPI {
     } catch (error) {
       console.error('❌ Profile fetch failed:', error);
       throw error
+    }
+  }
+
+  // Fonction pour créer les utilisateurs de démonstration
+  static async createDemoUsers() {
+    console.log('🎭 Création des utilisateurs de démonstration...');
+    
+    if (this.isDemoMode()) {
+      console.log('Mode démo activé - simulation de la création des utilisateurs');
+      return { success: true, message: 'Utilisateurs de démonstration simulés créés' };
+    }
+
+    try {
+      const apiUrl = `${supabaseUrl}/functions/v1/admin-api/create-demo-users`;
+      const result = await this.makeRequest(apiUrl, {
+        method: 'POST'
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Erreur lors de la création des utilisateurs de démonstration:', error);
+      throw error;
+    }
+  }
+
+  // Fonction pour basculer l'état des utilisateurs de démonstration
+  static async toggleDemoUsers(activate: boolean) {
+    console.log(`🔄 ${activate ? 'Activation' : 'Désactivation'} des utilisateurs de démonstration...`);
+    
+    if (this.isDemoMode()) {
+      return {
+        success: true,
+        message: `Simulation: utilisateurs de démonstration ${activate ? 'activés' : 'désactivés'}`,
+        count: 5
+      };
+    }
+
+    try {
+      const apiUrl = `${supabaseUrl}/functions/v1/admin-api/toggle-demo-users`;
+      const result = await this.makeRequest(apiUrl, {
+        method: 'POST',
+        body: JSON.stringify({ activate })
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Erreur lors de la bascule des utilisateurs de démonstration:', error);
+      throw error;
     }
   }
 
