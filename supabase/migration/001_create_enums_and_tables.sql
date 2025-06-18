@@ -1,11 +1,25 @@
 -- 001_create_enums_and_tables.sql
---  Création des types ENUM et des tables métier
+-- Création des types ENUM et des tables métier
 
--- Types ENUM
-CREATE TYPE IF NOT EXISTS public.user_role AS ENUM('PQAP','FONDS_MUTUELS','LES_DEUX');
-CREATE TYPE IF NOT EXISTS public.activity_type AS ENUM('login','podcast_listened','exam_completed','minigame_played','profile_updated');
+-- 1) Supprimer et (re)créer le type user_role
+DROP TYPE IF EXISTS public.user_role CASCADE;
+CREATE TYPE public.user_role AS ENUM (
+  'PQAP',
+  'FONDS_MUTUELS',
+  'LES_DEUX'
+);
 
--- Table users
+-- 2) Supprimer et (re)créer le type activity_type
+DROP TYPE IF EXISTS public.activity_type CASCADE;
+CREATE TYPE public.activity_type AS ENUM (
+  'login',
+  'podcast_listened',
+  'exam_completed',
+  'minigame_played',
+  'profile_updated'
+);
+
+-- 3) Table users
 CREATE TABLE IF NOT EXISTS public.users (
   id uuid PRIMARY KEY,
   primerica_id text UNIQUE NOT NULL,
@@ -24,23 +38,23 @@ CREATE TABLE IF NOT EXISTS public.users (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Table permissions
+-- 4) Table permissions
 CREATE TABLE IF NOT EXISTS public.permissions (
   id serial PRIMARY KEY,
   name text UNIQUE NOT NULL,
   description text
 );
 
--- Jointure user_permissions
+-- 5) Jointure user_permissions
 CREATE TABLE IF NOT EXISTS public.user_permissions (
   user_id uuid REFERENCES public.users(id) ON DELETE CASCADE,
   permission_id integer REFERENCES public.permissions(id) ON DELETE CASCADE,
   granted_by uuid,
   granted_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY(user_id,permission_id)
+  PRIMARY KEY(user_id, permission_id)
 );
 
--- Autres tables (exemple Exams)
+-- 6) Exemple d’autres tables (à compléter pour votre schéma complet) :
 CREATE TABLE IF NOT EXISTS public.exams (
   id uuid PRIMARY KEY,
   exam_name text NOT NULL,
@@ -54,4 +68,4 @@ CREATE TABLE IF NOT EXISTS public.exams (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- ... ajoutez tables minigames, podcast_content, user_exam_attempts, user_minigame_scores, recent_activities, admin_logs
+-- etc. (minigames, user_exam_attempts, user_minigame_scores, podcast_content, recent_activities, admin_logs, …)
