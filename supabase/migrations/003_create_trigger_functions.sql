@@ -1,19 +1,17 @@
--- Fonction pour mettre à jour updated_at
-CREATE OR REPLACE FUNCTION public.update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at := now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- 003_fix_create_profile_trigger.sql
 
--- Fonction pour créer un profil public après insertion en auth.users
-CREATE OR REPLACE FUNCTION public.create_profile_for_new_user()
-RETURNS TRIGGER AS $$
+-- 1) Supprimez l'ancienne fonction si elle existe
+DROP FUNCTION IF EXISTS public.create_profile_for_new_user();
+
+-- 2) (Re)créez la fonction en castant initial_role en user_role
+CREATE FUNCTION public.create_profile_for_new_user()
+  RETURNS trigger
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+AS $$
 DECLARE
-  metadata jsonb;
+  metadata jsonb := NEW.raw_user_meta_data;
 BEGIN
-  metadata := NEW.raw_user_meta_data;
   INSERT INTO public.users (
     id,
     primerica_id,
@@ -30,24 +28,19 @@ BEGIN
     NEW.email,
     metadata->> 'first_name',
     metadata->> 'last_name',
-    metadata->> 'initial_role',
+    -- Ici on cast le texte en enum user_role
+    (metadata->> 'initial_role')::public.user_role,
     TRUE,
     now(),
     now()
   );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
--- Triggers
-DROP TRIGGER IF EXISTS set_updated_at ON public.users;
-CREATE TRIGGER set_updated_at
-  BEFORE UPDATE ON public.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.update_updated_at();
-
-DROP TRIGGER IF EXISTS auth_users_insert_profile ON auth.users;
-CREATE TRIGGER auth_users_insert_profile
+-- 3) Recréez le trigger (si vous l'aviez déjà défini auparavant)
+DROP TRIGGER IF EXISTS on_auth_user_insert ON auth.users;
+CREATE TRIGGER on_auth_user_insert
   AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE FUNCTION public.create_profile_for_new_user();
