@@ -19,12 +19,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
+    "supabase": "^2.26.9",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@supabase/cli": "^1.89.0",
     "@eslint/js": "^9.9.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
