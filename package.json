@@ -10,18 +10,12 @@
     "lint": "eslint .",
     "test": "vitest",
     "test:ui": "vitest --ui",
-
-    // CLI Supabase
     "sb": "supabase",
-    "sb:login": "npm run sb login",
-    "sb:link": "npm run sb link --project-ref jrvklvxdmcyugtlmgwya",
-
-    // Déploiement des Edge Functions
-    "sb:deploy:auth-api": "npm run sb functions deploy auth-api --no-verify-jwt",
-    "sb:deploy:user-api": "npm run sb functions deploy user-api",
-    "sb:deploy:admin-api": "npm run sb functions deploy admin-api",
-
-    // Commande globale de déploiement
+    "sb:login": "supabase login",
+    "sb:link": "supabase link --project-ref jrvklvxdmcyugtlmgwya",
+    "sb:deploy:auth-api": "supabase functions deploy auth-api --no-verify-jwt",
+    "sb:deploy:user-api": "supabase functions deploy user-api",
+    "sb:deploy:admin-api": "supabase functions deploy admin-api",
     "deploy": "npm run build && npm run sb:deploy:auth-api && npm run sb:deploy:user-api && npm run sb:deploy:admin-api"
   },
   "dependencies": {
