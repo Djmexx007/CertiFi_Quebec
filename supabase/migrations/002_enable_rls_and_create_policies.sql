@@ -26,4 +26,11 @@ DROP POLICY IF EXISTS admin_full_access ON public.users;
 CREATE POLICY admin_full_access
   ON public.users FOR ALL
   TO authenticated
-  USING ((EXISTS (SELECT 1 FROM public.users u WHERE u.id = auth.uid() AND (u.is_admin OR u.is_supreme_admin))));
+  USING (
+    EXISTS (
+      SELECT 1
+        FROM public.users u
+       WHERE u.id = auth.uid()
+         AND (u.is_admin OR u.is_supreme_admin)
+    )
+  );
