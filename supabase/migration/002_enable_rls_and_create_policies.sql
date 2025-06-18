@@ -1,24 +1,56 @@
 -- 002_enable_rls_and_create_policies.sql
---  Activation de RLS et création des policies de base
+-- Activation de RLS et création des policies de base
 
--- Activer RLS sur public.users
+-- 1) Activer RLS sur public.users
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
--- Policy pour lookup connexion (anon)
-DROP POLICY IF EXISTS "Allow anon login read" ON public.users;
-CREATE POLICY "Allow anon login read"
-  ON public.users FOR SELECT TO anon USING (true);
 
--- Policies pour authenticated users
-DROP POLICY IF EXISTS "Users can manage own profile" ON public.users;
-CREATE POLICY "Users can manage own profile"
-  ON public.users FOR SELECT, UPDATE USING (auth.uid() = id);
+-- 2) Policy pour lookup connexion (anon)
+DROP POLICY IF EXISTS allow_anon_login_read ON public.users;
+CREATE POLICY allow_anon_login_read
+  ON public.users
+  FOR SELECT
+  TO anon
+  USING (true);
 
--- Policy admin/full-access
-DROP POLICY IF EXISTS "Admin full access" ON public.users;
-CREATE POLICY "Admin full access"
-  ON public.users FOR ALL TO authenticated WITH CHECK ((EXISTS(
-    SELECT 1 FROM public.user_permissions up JOIN public.permissions p ON up.permission_id = p.id
-    WHERE up.user_id = auth.uid() AND p.name = 'admin'
-  )));
+-- 3) Policy pour que chaque utilisateur puisse lire SON propre profil
+DROP POLICY IF EXISTS users_select_own ON public.users;
+CREATE POLICY users_select_own
+  ON public.users
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
 
--- Active RLS sur autres tables et policies similaires...
+-- 4) Policy pour que chaque utilisateur puisse mettre à jour SON propre profil
+DROP POLICY IF EXISTS users_update_own ON public.users;
+CREATE POLICY users_update_own
+  ON public.users
+  FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- 5) Policy « Admin full access » pour les admins
+DROP POLICY IF EXISTS admin_full_access ON public.users;
+CREATE POLICY admin_full_access
+  ON public.users
+  FOR ALL
+  TO authenticated
+  USING (
+    auth.uid() IN (
+      SELECT up.user_id
+      FROM public.user_permissions up
+      JOIN public.permissions p ON up.permission_id = p.id
+      WHERE p.name = 'admin'
+    )
+  )
+  WITH CHECK (
+    auth.uid() IN (
+      SELECT up.user_id
+      FROM public.user_permissions up
+      JOIN public.permissions p ON up.permission_id = p.id
+      WHERE p.name = 'admin'
+    )
+  );
+
+-- 6) Activez le RLS et créez des policies similaires sur les autres tables :
+--    public.permissions, public.user_permissions, public.exams, etc.
