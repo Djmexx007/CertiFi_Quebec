@@ -27,9 +27,8 @@ BEGIN
     metadata->> 'primerica_id',
     NEW.email,
     metadata->> 'first_name',
-    metadata->> 'last_name',
-    -- Ici on cast le texte en enum user_role
-    (metadata->> 'initial_role')::public.user_role,
+    metadata->> 'last_name',                   -- CORRECTION ICI
+    (metadata->> 'initial_role')::public.user_role,  -- CAST EXPLICITE
     TRUE,
     now(),
     now()
@@ -38,9 +37,9 @@ BEGIN
 END;
 $$;
 
--- 3) Recréez le trigger (si vous l'aviez déjà défini auparavant)
+-- 3) (Re)créez le trigger associé
 DROP TRIGGER IF EXISTS on_auth_user_insert ON auth.users;
 CREATE TRIGGER on_auth_user_insert
   AFTER INSERT ON auth.users
   FOR EACH ROW
-  EXECUTE FUNCTION public.create_profile_for_new_user();
+EXECUTE FUNCTION public.create_profile_for_new_user();
