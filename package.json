@@ -10,12 +10,12 @@
     "lint": "eslint .",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "sb": "supabase",
-    "sb:login": "supabase login",
-    "sb:link": "supabase link --project-ref jrvklvxdmcyugtlmgwya",
-    "sb:deploy:auth-api": "supabase functions deploy auth-api --no-verify-jwt",
-    "sb:deploy:user-api": "supabase functions deploy user-api",
-    "sb:deploy:admin-api": "supabase functions deploy admin-api",
+
+    "sb:login": "npx supabase login",
+    "sb:link": "npx supabase link --project-ref jrvklvxdmcyugtlmgwya",
+    "sb:deploy:auth-api": "npx supabase functions deploy auth-api --no-verify-jwt",
+    "sb:deploy:user-api": "npx supabase functions deploy user-api",
+    "sb:deploy:admin-api": "npx supabase functions deploy admin-api",
     "deploy": "npm run build && npm run sb:deploy:auth-api && npm run sb:deploy:user-api && npm run sb:deploy:admin-api"
   },
   "dependencies": {
@@ -25,6 +25,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "supabase": "^2.26.9",
     "@eslint/js": "^9.9.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
@@ -35,7 +36,6 @@
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^15.9.0",
     "postcss": "^8.4.35",
-    "supabase": "^2.26.9",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
