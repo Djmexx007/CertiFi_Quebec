@@ -1,6 +1,19 @@
--- 1. Crée les types ENUM
-CREATE TYPE IF NOT EXISTS public.user_role AS ENUM('PQAP','FONDS_MUTUELS','LES_DEUX');
-CREATE TYPE IF NOT EXISTS public.activity_type AS ENUM('login','podcast_listened','exam_completed','minigame_played','level_up');
+-- 1. Crée les types ENUM de manière compatible (sans IF NOT EXISTS)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    CREATE TYPE public.user_role AS ENUM('PQAP','FONDS_MUTUELS','LES_DEUX');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'activity_type') THEN
+    CREATE TYPE public.activity_type AS ENUM(
+      'login',
+      'podcast_listened',
+      'exam_completed',
+      'minigame_played',
+      'level_up'
+    );
+  END IF;
+END$$;
 
 -- 2. Crée les tables principales
 CREATE TABLE IF NOT EXISTS public.users (
@@ -20,3 +33,6 @@ CREATE TABLE IF NOT EXISTS public.users (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
 );
+
+-- Autres tables (ex: permissions, exams, etc.)
+-- À compléter selon votre schéma métier
