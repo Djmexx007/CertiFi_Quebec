@@ -14,18 +14,27 @@ DECLARE
   metadata jsonb;
 BEGIN
   metadata := NEW.raw_user_meta_data;
-  INSERT INTO public.users (id, primerica_id, email, first_name, last_name, initial_role, is_active, created_at, updated_at)
-    VALUES (
-      NEW.id,
-      metadata->> 'primerica_id',
-      NEW.email,
-      metadata->> 'first_name',
-      metadata->> 'last_name',
-      metadata->> 'initial_role',
-      TRUE,
-      now(),
-      now()
-    );
+  INSERT INTO public.users (
+    id,
+    primerica_id,
+    email,
+    first_name,
+    last_name,
+    initial_role,
+    is_active,
+    created_at,
+    updated_at
+  ) VALUES (
+    NEW.id,
+    metadata->> 'primerica_id',
+    NEW.email,
+    metadata->> 'first_name',
+    metadata->> 'last_name',
+    metadata->> 'initial_role',
+    TRUE,
+    now(),
+    now()
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
