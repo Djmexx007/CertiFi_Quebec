@@ -1,12 +1,9 @@
--- 003_create_trigger_functions.sql
---  Fonctions et triggers pour créer le profil à l'inscription
-
--- 1) Supprimez l'ancienne fonction si elle existe
+-- Supprime l’ancienne fonction si existante
 DROP FUNCTION IF EXISTS public.create_profile_for_new_user() CASCADE;
 
--- 2) (Re)Créez la fonction corrigée
+-- Recréation de la fonction de trigger
 CREATE FUNCTION public.create_profile_for_new_user()
-  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   metadata jsonb := NEW.raw_user_meta_data;
 BEGIN
@@ -26,7 +23,7 @@ BEGIN
 END;
 $$;
 
--- 3) (Re)Créez le trigger sur auth.users
+-- Recréation du trigger
 DROP TRIGGER IF EXISTS auth_users_insert_profile ON auth.users;
 CREATE TRIGGER auth_users_insert_profile
   AFTER INSERT ON auth.users
